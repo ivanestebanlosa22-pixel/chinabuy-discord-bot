@@ -1,5 +1,7 @@
 require("dotenv").config();
 
+const fs = require("fs");
+const { google } = require("googleapis");
 const {
   Client,
   GatewayIntentBits,
@@ -9,14 +11,27 @@ const {
   ButtonStyle
 } = require("discord.js");
 
-const Papa = require("papaparse");
-const fetch = require("node-fetch");
+// ==========================
+// CONFIG
+// ==========================
 
-const TOKEN = process.env.DISCORD_TOKEN;
-const SHEET_CSV_URL = "PEGA_AQUI_EL_CSV_REAL";
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
-const OFFER_CHANNELS = ["ID_CANAL_1"];
-const OFFER_INTERVAL = 1000 * 60 * 30;
+// Hoja y rango (IGUAL que Telegram)
+const SHEET_RANGE = "MAIN!A:H";
+
+// ID(s) de canal de Discord donde mandar ofertas
+const OFFER_CHANNELS = [
+  "PEGA_AQUI_ID_CANAL_DISCORD"
+];
+
+// Cada cuánto enviar (1 hora)
+const OFFER_INTERVAL = 1000 * 60 * 60;
+
+// ==========================
+// DISCORD CLIENT
+// ==========================
 
 const client = new Client({
   intents: [
@@ -26,116 +41,140 @@ const client = new Client({
   ]
 });
 
-let products = [];
-let cursor = 0;
+// ==========================
+// ESTADO
+// ==========================
+
+let datos = [];
+let filaActual = 1;
+
+// ==========================
+// GOOGLE AUTH (LEE ARCHIVO)
+// ==========================
+
+async function getAuthClient() {
+  // Railway File Secret -> variable contiene la RUTA al archivo
+  const credentialsPath = process.env.GOOGLE_CREDENTIALS;
+
+  if (!credentialsPath) {
+    throw new Error("GOOGLE_CREDENTIALS no existe en Railway");
+  }
+
+  const json = fs.readFileSync(credentialsPath, "utf8");
+  const credentials = JSON.parse(json);
+
+  return new google.auth.GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+  });
+}
+
+// ==========================
+// LEER SHEET (IGUAL QUE TELEGRAM)
+// ==========================
+
+async function cargarDatos() {
+  const auth = await getAuthClient();
+  const sheets = google.sheets({ version: "v4", auth });
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: SHEET_RANGE
+  });
+
+  const filas = res.data.values || [];
+
+  // Quitamos headers
+  datos = filas.slice(1);
+
+  console.log("✅ Filas cargadas:", datos.length);
+}
 
 // ==========================
 // LIMPIEZA
 // ==========================
+
 function clean(v = "") {
-  return String(v)
-    .replace(/=HYPERLINK\("([^"]+)",.*?\)/gi, "$1")
-    .replace(/\r?\n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return String(v).replace(/^_+|_+$/g, "").trim();
 }
 
 // ==========================
-// PARSE CSV ROBUSTO
+// EMBED + BOTONES
 // ==========================
-function parseCSV(text) {
-  let parsed = Papa.parse(text, { skipEmptyLines: true });
 
-  // si solo hay 1 columna → usar ;
-  if (parsed.data[0]?.length === 1) {
-    parsed = Papa.parse(text, {
-      delimiter: ";",
-      skipEmptyLines: true
-    });
-  }
-
-  return parsed.data;
-}
-
-// ==========================
-// CARGAR PRODUCTOS
-// ==========================
-async function fetchProducts() {
-  try {
-    console.log("🔄 Descargando CSV...");
-    const res = await fetch(SHEET_CSV_URL);
-    const csv = await res.text();
-
-    const rows = parseCSV(csv);
-
-    console.log("🧪 COLUMNAS:", rows[0]?.length);
-    console.log("🧪 TOTAL FILAS:", rows.length);
-
-    const data = rows.slice(1); // quitar headers
-
-    products = data
-      .map(r => ({
-        photo: clean(r[0]),
-        name: clean(r[1]),
-        price: clean(r[2]),
-        kakobuy: clean(r[3]),
-        usfans: clean(r[4]),
-        cnfans: clean(r[5]),
-        category: clean(r[6]).toLowerCase()
-      }))
-      .filter(p => p.name && p.photo);
-
-    console.log("✅ PRODUCTOS CARGADOS:", products.length);
-  } catch (e) {
-    console.error("❌ ERROR CSV:", e);
-  }
-}
-
-// ==========================
-// EMBED
-// ==========================
-function embed(p) {
+function buildEmbed(p) {
   return new EmbedBuilder()
     .setColor(0x0ea5e9)
-    .setTitle(p.name)
-    .setDescription(
-      `${p.category ? `🏷️ ${p.category.toUpperCase()}\n` : ""}` +
-      `${p.price ? `💰 ${p.price}` : ""}`
-    )
-    .setImage(p.photo);
+    .setTitle(clean(p[1]))       // nombre
+    .setDescription(`💰 ${clean(p[2])}`) // precio
+    .setImage(clean(p[0]))       // foto
+    .setFooter({ text: "🔥 Oferta automática" });
 }
 
-function buttons(p) {
+function buildButtons(p) {
   const row = new ActionRowBuilder();
 
-  if (p.usfans?.startsWith("http"))
-    row.addComponents(new ButtonBuilder().setLabel("USFANS").setStyle(ButtonStyle.Link).setURL(p.usfans));
+  // Kakobuy (col 3)
+  if (p[3]?.startsWith("http")) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setLabel("Kakobuy")
+        .setStyle(ButtonStyle.Link)
+        .setURL(p[3])
+    );
+  }
 
-  if (p.cnfans?.startsWith("http"))
-    row.addComponents(new ButtonBuilder().setLabel("CNFANS").setStyle(ButtonStyle.Link).setURL(p.cnfans));
+  // USFans (col 4)
+  if (p[4]?.startsWith("http")) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setLabel("USFANS")
+        .setStyle(ButtonStyle.Link)
+        .setURL(p[4])
+    );
+  }
 
-  if (p.kakobuy?.startsWith("http"))
-    row.addComponents(new ButtonBuilder().setLabel("Kakobuy").setStyle(ButtonStyle.Link).setURL(p.kakobuy));
+  // CNFans (col 5)
+  if (p[5]?.startsWith("http")) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setLabel("CNFans")
+        .setStyle(ButtonStyle.Link)
+        .setURL(p[5])
+    );
+  }
 
   return row.components.length ? [row] : [];
 }
 
 // ==========================
-// ENVIO
+// ENVIAR OFERTA
 // ==========================
-async function sendOffer() {
-  if (!products.length) {
-    console.log("⚠️ NO PRODUCTS");
+
+async function enviarOferta() {
+  if (!datos.length) {
+    console.log("❌ No hay productos");
     return;
   }
 
-  const p = products[cursor++ % products.length];
-  console.log("📤 Enviando:", p.name);
+  if (filaActual >= datos.length) {
+    filaActual = 1;
+  }
 
-  for (const id of OFFER_CHANNELS) {
-    const ch = await client.channels.fetch(id);
-    if (ch) {
-      await ch.send({ embeds: [embed(p)], components: buttons(p) });
+  const p = datos[filaActual++];
+  console.log("📤 Enviando:", clean(p[1]));
+
+  for (const channelId of OFFER_CHANNELS) {
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (!channel) continue;
+
+      await channel.send({
+        embeds: [buildEmbed(p)],
+        components: buildButtons(p)
+      });
+    } catch (e) {
+      console.error("❌ Error enviando a canal", channelId, e.message);
     }
   }
 }
@@ -143,29 +182,41 @@ async function sendOffer() {
 // ==========================
 // READY
 // ==========================
-client.once("ready", async () => {
-  console.log("🔥 BOT ONLINE");
-  await fetchProducts();
 
-  sendOffer(); // forzado
-  setInterval(sendOffer, OFFER_INTERVAL);
+client.once("ready", async () => {
+  console.log("🔥 BOT DISCORD ONLINE:", client.user.tag);
+
+  try {
+    await cargarDatos();
+
+    // Envío inmediato de prueba
+    await enviarOferta();
+
+    // Envíos automáticos
+    setInterval(enviarOferta, OFFER_INTERVAL);
+  } catch (e) {
+    console.error("❌ ERROR GENERAL:", e.message);
+  }
 });
 
 // ==========================
 // COMANDOS
 // ==========================
+
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
-
-  if (msg.content === "!oferta") {
-    if (!products.length) return msg.reply("❌ No hay productos");
-    const p = products[Math.floor(Math.random() * products.length)];
-    return msg.channel.send({ embeds: [embed(p)], components: buttons(p) });
-  }
 
   if (msg.content === "!ping") {
     msg.reply("✅ Vivo");
   }
+
+  if (msg.content === "!oferta") {
+    await enviarOferta();
+  }
 });
 
-client.login(TOKEN);
+// ==========================
+// LOGIN
+// ==========================
+
+client.login(DISCORD_TOKEN);
