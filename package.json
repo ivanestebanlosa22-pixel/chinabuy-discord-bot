@@ -1,14 +1,16 @@
 {
   "name": "chinabuy-discord-bot",
   "version": "1.0.0",
+  "description": "Bot Discord ChinabuyHub",
   "main": "index.js",
-  "license": "MIT",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "node-fetch": "^2.7.0",
-    "dotenv": "^16.0.0"
+    "discord.js": "^14.16.0",
+    "papaparse": "^5.4.1",
+    "node-fetch": "^3.3.2",
+    "dotenv": "^16.4.5"
   }
 }
