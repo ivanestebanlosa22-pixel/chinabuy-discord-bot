@@ -9,23 +9,22 @@ const {
   ButtonStyle
 } = require("discord.js");
 
+const Papa = require("papaparse");
 const fetch = require("node-fetch");
 
 // ==========================
 // CONFIG
 // ==========================
 
-// Token del bot (Railway)
 const TOKEN = process.env.DISCORD_TOKEN;
 
-// Tu nueva URL CSV (muy estable)
 const SHEET_CSV_URL =
   "https://doc-0c-50-sheets.googleusercontent.com/pub/h6sqfrlg9m3sbhs0jjmh9nmhns/j1786hcqekfmhamb874ih5tr24/1765114880000/100573730801597486798/100573730801597486798/e@2PACX-1vRcxnsKB9c1Zy9x3ajJw4cIm8-kgwHtEBj_LTqcSLpXtpltKMTqUdkg8XaOgNJunfVHyRnlTvqOxlap?output=csv";
 
 let products = [];
 
 // ==========================
-// CLIENT DISCORD — INTENTS CORRECTOS
+// DISCORD CLIENT
 // ==========================
 
 const client = new Client({
@@ -39,90 +38,48 @@ const client = new Client({
 });
 
 // ==========================
-// CSV PARSER ROBUSTO
-// ==========================
-function parseCSVRow(row) {
-  const cols = [];
-  let current = "";
-  let insideQuotes = false;
-
-  for (let i = 0; i < row.length; i++) {
-    const c = row[i];
-
-    if (c === '"' && row[i + 1] === '"') {
-      current += '"';
-      i++;
-    } else if (c === '"') {
-      insideQuotes = !insideQuotes;
-    } else if (c === "," && !insideQuotes) {
-      cols.push(current.trim());
-      current = "";
-    } else {
-      current += c;
-    }
-  }
-
-  cols.push(current.trim());
-  return cols;
-}
-
-// ==========================
-// FUNCIÓN DE LIMPIEZA
+// LIMPIEZA DE CAMPOS
 // ==========================
 
-function clean(text) {
-  if (!text) return "";
-  return text
-    .replace(/\r?\n/g, " ")      // eliminar saltos de línea
-    .replace(/""/g, '"')         // desdoblar comillas
-    .replace(/(^"|"$)/g, "")     // quitar comillas externas
-    .replace(/\s+/g, " ")        // compactar espacios
+function clean(text = "") {
+  return String(text)
+    .replace(/\r?\n/g, " ") 
+    .replace(/""/g, '"')
+    .replace(/(^"|"$)/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
 // ==========================
-// CARGADOR DE PRODUCTOS
+// CARGAR CSV — AHORA CON PAPAPARSE
 // ==========================
 
 async function fetchProducts() {
   try {
     console.log("🔄 Descargando CSV…");
     const res = await fetch(SHEET_CSV_URL);
-    const csv = await res.text();
+    const csvText = await res.text();
 
-    const lines = csv.split("\n").filter((l) => l.trim() !== "");
-    const header = parseCSVRow(clean(lines[0]));
-
-    const idxFoto = header.indexOf("foto");
-    const idxNombre = header.indexOf("nombre");
-    const idxPrecio = header.indexOf("precio");
-    const idxKakobuy = header.indexOf("LINK kakobuy");
-    const idxUsfans = header.indexOf(" link usfans");
-    const idxCnfans = header.indexOf("link de cnfans");
-    const idxCat = header.indexOf("CATEGRIAS");
-
-    products = lines.slice(1).map((line) => {
-      const cols = parseCSVRow(line).map(clean);
-
-      const get = (idx) =>
-        idx >= 0 && idx < cols.length ? cols[idx] : "";
-
-      return {
-        name: clean(get(idxNombre)),
-        photo: clean(get(idxFoto)),
-        price: clean(get(idxPrecio)),
-        kakobuy: clean(get(idxKakobuy)),
-        usfans: clean(get(idxUsfans)),
-        cnfans: clean(get(idxCnfans)),
-        category: clean(get(idxCat)).toLowerCase()
-      };
+    const parsed = Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true
     });
+
+    products = parsed.data.map((row) => ({
+      photo: clean(row["foto"]),
+      name: clean(row["nombre"]),
+      price: clean(row["precio"]),
+      kakobuy: clean(row["LINK kakobuy"]),
+      usfans: clean(row[" link usfans"]),
+      cnfans: clean(row["link de cnfans"]),
+      category: clean(row["CATEGRIAS"]).toLowerCase()
+    }));
 
     products = products.filter((p) => p.name && p.photo);
 
-    console.log("✅ Productos cargados correctamente:", products.length);
+    console.log("✅ Productos cargados:", products.length);
   } catch (err) {
-    console.error("❌ ERROR cargando CSV:", err.message);
+    console.error("❌ ERROR cargando CSV:", err);
   }
 }
 
@@ -176,7 +133,7 @@ function buildButtons(p) {
 // ==========================
 
 client.once("ready", async () => {
-  console.log("🔥 BOT ONLINE como:", client.user.tag);
+  console.log("🔥 BOT ACTIVO como:", client.user.tag);
   await fetchProducts();
 });
 
@@ -190,44 +147,34 @@ client.on("messageCreate", async (msg) => {
 
   const [command, ...args] = msg.content.slice(1).split(" ");
 
-  // ================
   // !ping
-  // ================
   if (command === "ping") {
-    return msg.reply("🏓 Pong! El bot está funcionando.");
+    return msg.reply("🏓 Pong! Estoy funcionando.");
   }
 
-  // ================
   // !buscar
-  // ================
   if (command === "buscar") {
     const term = args.join(" ").toLowerCase().trim();
-
     if (!term) return msg.reply("🔎 Usa: `!buscar jordan`");
 
     const results = products
-      .filter((p) =>
-        p.name.toLowerCase().includes(term)
-      )
+      .filter((p) => p.name.toLowerCase().includes(term))
       .slice(0, 5);
 
     if (!results.length)
       return msg.reply("❌ No encontré productos con ese nombre.");
 
     for (const p of results) {
-      await msg.channel.send({
+      msg.channel.send({
         embeds: [buildEmbed(p)],
         components: buildButtons(p)
       });
     }
   }
 
-  // ================
   // !categoria
-  // ================
   if (command === "categoria") {
     const cat = args.join(" ").toLowerCase().trim();
-
     if (!cat) return msg.reply("🏷️ Usa: `!categoria zapatillas`");
 
     const results = products
@@ -238,7 +185,7 @@ client.on("messageCreate", async (msg) => {
       return msg.reply(`❌ Nada encontrado en la categoría: **${cat}**`);
 
     for (const p of results) {
-      await msg.channel.send({
+      msg.channel.send({
         embeds: [buildEmbed(p)],
         components: buildButtons(p)
       });
