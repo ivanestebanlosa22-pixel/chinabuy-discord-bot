@@ -13,30 +13,31 @@ const {
   ButtonBuilder,
   ButtonStyle,
 } = require("discord.js");
+
 const fetch = require("node-fetch");
 
 // =========================
 // CONFIG
 // =========================
 
-// TOKEN DEL BOT (desde variables de entorno)
+// TOKEN DEL BOT (Railway variable)
 const TOKEN = process.env.DISCORD_TOKEN;
 
-// URL CSV PÚBLICO DE TU GOOGLE SHEET
+// CSV de Google Sheets
 const SHEET_CSV_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRcxnsKB9c1Zy9x3ajJw4cIm8-kgwHtEBj_LTqcSLpXtpltKMTqUdkg8XaOgNJunfVHyRnlTvqOxlap/pub?output=csv";
 
-// NOMBRES DE CANAL
+// Nombres de canales
 const CHANNEL_CATALOG = "catalog";
 const CHANNEL_TOP = "top-products";
 const CHANNEL_OFFERS = "offers";
 const CHANNEL_CHAT = "chat";
 
-// CUÁNTOS PRODUCTOS INICIALES
+// Configuración inicial
 const INITIAL_CATALOG_COUNT = 50;
 const INITIAL_TOP_COUNT = 5;
 
-// ROLES AUTOMÁTICOS
+// Roles automáticos
 const ROLE_CONFIG = [
   { name: "Activo 🟢", threshold: 10 },
   { name: "Colaborador 🔥", threshold: 30 },
@@ -44,7 +45,7 @@ const ROLE_CONFIG = [
 ];
 
 // =========================
-// PARSER CSV PRO
+// CSV PRO PARSER
 // =========================
 
 function parseCSVRow(row) {
@@ -67,13 +68,13 @@ function parseCSVRow(row) {
       current += char;
     }
   }
-  cols.push(current.trim());
 
+  cols.push(current.trim());
   return cols;
 }
 
 // =========================
-// VARIABLES EN MEMORIA
+// VARIABLES DEL BOT
 // =========================
 
 let products = [];
@@ -81,19 +82,20 @@ let offersIndex = 0;
 let seedDone = false;
 let dailyIndex = 0;
 let guildGlobal = null;
-const activityMap = new Map(); // conteo de mensajes por usuario
+
+const activityMap = new Map();
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMembers,
   ],
 });
 
 // =========================
-// LÓGICA GOOGLE SHEETS
+// CARGAR PRODUCTOS
 // =========================
 
 async function fetchProductsFromSheet() {
@@ -102,11 +104,6 @@ async function fetchProductsFromSheet() {
     const csv = await res.text();
 
     const lines = csv.split("\n").filter((l) => l.trim() !== "");
-    if (lines.length < 2) {
-      console.log("⚠️ No products found in sheet.");
-      return;
-    }
-
     const header = parseCSVRow(lines[0]).map((h) =>
       h.trim().replace(/(^\"|\"$)/g, "")
     );
@@ -115,113 +112,83 @@ async function fetchProductsFromSheet() {
     const idxNombre = header.indexOf("nombre");
     const idxPrecio = header.indexOf("precio");
     const idxKakobuy = header.indexOf("LINK kakobuy");
-    const idxUsfans = header.indexOf("link usfans"); // OJO: sin espacio inicial
+    const idxUsfans = header.indexOf("link usfans");
     const idxCnfans = header.indexOf("link de cnfans");
     const idxCategoria = header.indexOf("CATEGRIAS");
 
-    products = lines
-      .slice(1)
-      .map((row) => {
-        const cols = parseCSVRow(row);
+    products = lines.slice(1).map((row) => {
+      const cols = parseCSVRow(row);
 
-        const get = (idx) =>
-          idx >= 0 && idx < cols.length
-            ? cols[idx].trim().replace(/(^\"|\"$)/g, "")
-            : "";
+      const get = (idx) =>
+        idx >= 0 && idx < cols.length
+          ? cols[idx].trim().replace(/(^\"|\"$)/g, "")
+          : "";
 
-        return {
-          photo: get(idxFoto),
-          name: get(idxNombre),
-          price: get(idxPrecio),
-          kakobuy: get(idxKakobuy),
-          usfans: get(idxUsfans),
-          cnfans: get(idxCnfans),
-          category: get(idxCategoria),
-        };
-      })
-      .filter((p) => p.name && p.photo);
+      return {
+        photo: get(idxFoto),
+        name: get(idxNombre),
+        price: get(idxPrecio),
+        kakobuy: get(idxKakobuy),
+        usfans: get(idxUsfans),
+        cnfans: get(idxCnfans),
+        category: get(idxCategoria)
+          .replace(/[\n\r\t]/g, "")
+          .trim()
+          .toLowerCase(),
+      };
+    });
 
-    console.log(`✅ Loaded ${products.length} products from sheet.`);
+    console.log(`✅ Productos cargados: ${products.length}`);
   } catch (err) {
-    console.error("❌ Error fetching sheet:", err.message);
+    console.log("❌ Error leyendo CSV:", err.message);
   }
 }
 
 // =========================
-// HELPERS
+// HELPERS DE EMBEDS
 // =========================
-
-function getTextChannelByName(guild, name) {
-  return guild.channels.cache.find(
-    (ch) => ch.type === ChannelType.GuildText && ch.name === name
-  );
-}
 
 function buildProductEmbed(p, { emphasizeTop = false } = {}) {
-  const title = emphasizeTop ? `💎 ${p.name}` : `🛍️ ${p.name}`;
-
-  const embed = new EmbedBuilder()
-    .setTitle(title)
+  return new EmbedBuilder()
+    .setColor(0x111827)
+    .setTitle(emphasizeTop ? `💎 ${p.name}` : `🛍️ ${p.name}`)
     .setDescription(
-      (p.category ? `🏷️ **${p.category}**\n` : "") +
-        (p.price ? `💰 **${p.price}**\n` : "")
+      (p.category ? `🏷️ **${p.category.toUpperCase()}**\n` : "") +
+        (p.price ? `💰 **${p.price}**` : "")
     )
-    .setColor(0x111827); // estilo catálogo oscuro
-
-  if (p.photo && p.photo.startsWith("http")) {
-    embed.setImage(p.photo);
-  }
-
-  embed.addFields({
-    name: "Compra segura",
-    value:
-      (p.usfans ? `🇺🇸 USFANS (recomendado)\n` : "") +
-      (p.cnfans ? `🇨🇳 CNFANS\n` : "") +
-      (p.kakobuy ? `🛒 Kakobuy\n` : "") ||
-      "Sin enlaces disponibles.",
-  });
-
-  embed.setFooter({
-    text:
-      "Recomendación basada en catálogo curado y estándares de la comunidad.",
-  });
-
-  return embed;
+    .setImage(p.photo)
+    .setFooter({
+      text: "Recomendación basada en catálogo curado y estándares de la comunidad.",
+    });
 }
 
 function buildProductButtons(p) {
-  const buttons = [];
+  const row = new ActionRowBuilder();
 
-  if (p.usfans && p.usfans.startsWith("http")) {
-    buttons.push(
+  if (p.usfans?.startsWith("http"))
+    row.addComponents(
       new ButtonBuilder()
         .setLabel("USFANS (recomendado)")
         .setStyle(ButtonStyle.Link)
         .setURL(p.usfans)
     );
-  }
 
-  if (p.cnfans && p.cnfans.startsWith("http")) {
-    buttons.push(
+  if (p.cnfans?.startsWith("http"))
+    row.addComponents(
       new ButtonBuilder()
         .setLabel("CNFANS")
         .setStyle(ButtonStyle.Link)
         .setURL(p.cnfans)
     );
-  }
 
-  if (p.kakobuy && p.kakobuy.startsWith("http")) {
-    buttons.push(
+  if (p.kakobuy?.startsWith("http"))
+    row.addComponents(
       new ButtonBuilder()
         .setLabel("Kakobuy")
         .setStyle(ButtonStyle.Link)
         .setURL(p.kakobuy)
     );
-  }
 
-  if (!buttons.length) return [];
-
-  const row = new ActionRowBuilder().addComponents(buttons);
   return [row];
 }
 
@@ -230,120 +197,92 @@ function buildProductButtons(p) {
 // =========================
 
 async function seedInitialContent(guild) {
-  if (seedDone) return;
-  if (!products.length) return console.log("⚠️ No products to seed yet.");
+  if (seedDone || !products.length) return;
 
-  const catalogChannel = getTextChannelByName(guild, CHANNEL_CATALOG);
-  const topChannel = getTextChannelByName(guild, CHANNEL_TOP);
+  const catalog = guild.channels.cache.find((c) => c.name === CHANNEL_CATALOG);
+  const top = guild.channels.cache.find((c) => c.name === CHANNEL_TOP);
 
-  if (!catalogChannel || !topChannel)
-    return console.log("⚠️ Seed skipped: catalog/top channels not found.");
+  if (!catalog || !top) return;
 
-  console.log("🌱 Seeding initial catalog and top products...");
+  console.log("🌱 Iniciando carga inicial...");
 
-  const top = products.slice(0, INITIAL_TOP_COUNT);
-  for (const p of top) {
-    const embed = buildProductEmbed(p, { emphasizeTop: true });
-    const components = buildProductButtons(p);
-    await topChannel
-      .send({ embeds: [embed], components })
-      .catch(() => {});
+  for (const p of products.slice(0, INITIAL_TOP_COUNT)) {
+    await top.send({
+      embeds: [buildProductEmbed(p, { emphasizeTop: true })],
+      components: buildProductButtons(p),
+    });
   }
 
-  const catalogList = products.slice(0, INITIAL_CATALOG_COUNT);
-  for (const p of catalogList) {
-    const embed = buildProductEmbed(p);
-    const components = buildProductButtons(p);
-    await catalogChannel
-      .send({ embeds: [embed], components })
-      .catch(() => {});
+  for (const p of products.slice(0, INITIAL_CATALOG_COUNT)) {
+    await catalog.send({
+      embeds: [buildProductEmbed(p)],
+      components: buildProductButtons(p),
+    });
   }
 
   seedDone = true;
-  console.log("✅ Initial seeding done.");
+  console.log("✅ Semilla completada");
 }
 
 // =========================
-// OFERTAS CADA 2 HORAS
+// PUBLICACIÓN AUTOMÁTICA
 // =========================
 
 async function sendNextOffer(guild) {
-  if (!products.length) return console.log("⚠️ No products for offers.");
-
-  const channel = getTextChannelByName(guild, CHANNEL_OFFERS);
-  if (!channel)
-    return console.log(`⚠️ Offers channel '${CHANNEL_OFFERS}' not found.`);
+  if (!products.length) return;
+  const ch = guild.channels.cache.find((c) => c.name === CHANNEL_OFFERS);
+  if (!ch) return;
 
   const p = products[offersIndex % products.length];
   offersIndex++;
 
-  const header = "💸 **Premium Offer Highlight**";
-  const embed = buildProductEmbed(p, { emphasizeTop: true });
-  const components = buildProductButtons(p);
-
-  await channel
-    .send({ content: header, embeds: [embed], components })
-    .catch(() => {});
-  console.log(`📤 Offer sent: ${p.name}`);
+  await ch.send({
+    content: "💸 **OFERTA PREMIUM**",
+    embeds: [buildProductEmbed(p, { emphasizeTop: true })],
+    components: buildProductButtons(p),
+  });
 }
-
-// =========================
-// PRODUCTO DESTACADO DEL DÍA (1 vez cada 24h)
-// =========================
 
 async function sendDailyHighlight(guild) {
   if (!products.length) return;
-  const topChannel = getTextChannelByName(guild, CHANNEL_TOP);
-  if (!topChannel) return;
+  const ch = guild.channels.cache.find((c) => c.name === CHANNEL_TOP);
+  if (!ch) return;
 
   const p = products[dailyIndex % products.length];
   dailyIndex++;
 
-  const header = "📆 **Producto destacado del día**";
-  const embed = buildProductEmbed(p, { emphasizeTop: true });
-  const components = buildProductButtons(p);
-
-  await topChannel
-    .send({ content: header, embeds: [embed], components })
-    .catch(() => {});
-  console.log(`🌟 Daily highlight: ${p.name}`);
+  await ch.send({
+    content: "📆 **Producto destacado del día**",
+    embeds: [buildProductEmbed(p, { emphasizeTop: true })],
+    components: buildProductButtons(p),
+  });
 }
 
-// =========================
-// MENSAJES MOTIVACIONALES & NOTICIAS
-// =========================
-
-const motivationMessages = [
-  "🧠 *Comprar inteligente > comprar impulsivo.* Tómate tu tiempo, pregunta y usa la comunidad.",
-  "💡 *Buena réplica = buena información.* No dudes en pedir segunda opinión.",
-  "🛡️ *Primero seguridad.* Si algo huele raro, frena y pregunta.",
-  "🎯 *No es comprar más, es comprar mejor.* Calidad y claridad siempre ganan.",
-  "📚 *Cada pedido es experiencia.* Compartirla ayuda a que el siguiente no cometa tu error.",
-];
-
-const newsMessages = [
-  "📢 *Tip rápido:* Revisa siempre bien las fotos QC antes de aceptar un pedido.",
-  "📢 *Recordatorio:* Guarda capturas de tus chats y QCs con los agentes.",
-  "📢 *Consejo:* Si es tu primer pedido, empieza con algo pequeño para probar.",
-  "📢 *Info:* Activa notificaciones en canales de catálogo si no quieres perder ofertas.",
-];
-
 async function sendMotivation(guild) {
-  const chat = getTextChannelByName(guild, CHANNEL_CHAT);
-  if (!chat) return;
-  const msg =
-    motivationMessages[
-      Math.floor(Math.random() * motivationMessages.length)
-    ];
-  await chat.send(msg).catch(() => {});
+  const ch = guild.channels.cache.find((c) => c.name === CHANNEL_CHAT);
+  if (!ch) return;
+
+  const messages = [
+    "🧠 Comprar inteligente > comprar impulsivo.",
+    "💡 Buena réplica = buena información.",
+    "🛡️ Seguridad primero siempre.",
+    "🎯 No es comprar más, es comprar mejor.",
+  ];
+
+  await ch.send(messages[Math.floor(Math.random() * messages.length)]);
 }
 
 async function sendNews(guild) {
-  const chat = getTextChannelByName(guild, CHANNEL_CHAT);
-  if (!chat) return;
-  const msg =
-    newsMessages[Math.floor(Math.random() * newsMessages.length)];
-  await chat.send(msg).catch(() => {});
+  const ch = guild.channels.cache.find((c) => c.name === CHANNEL_CHAT);
+  if (!ch) return;
+
+  const updates = [
+    "📢 Tip: revisa siempre bien las fotos QC.",
+    "📢 Info: guarda capturas de tus chats con agentes.",
+    "📢 Consejo: empieza con algo pequeño en tu primer pedido.",
+  ];
+
+  await ch.send(updates[Math.floor(Math.random() * updates.length)]);
 }
 
 // =========================
@@ -354,198 +293,113 @@ async function ensureRoles(guild) {
   for (const cfg of ROLE_CONFIG) {
     let role = guild.roles.cache.find((r) => r.name === cfg.name);
     if (!role) {
-      role = await guild.roles.create({
+      await guild.roles.create({
         name: cfg.name,
         color: "Random",
-        reason: "Auto role for activity",
       });
-      console.log(`🔧 Created role: ${cfg.name}`);
     }
   }
 }
 
 async function handleActivity(message) {
-  const { guild, member } = message;
-  if (!guild || !member || member.user.bot) return;
+  const member = message.member;
+  if (!member || member.user.bot) return;
 
   const key = member.id;
-  const current = activityMap.get(key) || 0;
-  const next = current + 1;
-  activityMap.set(key, next);
+  const count = (activityMap.get(key) || 0) + 1;
+
+  activityMap.set(key, count);
 
   for (const cfg of ROLE_CONFIG) {
-    if (current < cfg.threshold && next >= cfg.threshold) {
-      const role = guild.roles.cache.find((r) => r.name === cfg.name);
-      if (role && !member.roles.cache.has(role.id)) {
-        await member.roles.add(role).catch(() => {});
-        console.log(
-          `🏷️ Assigned role ${cfg.name} to ${member.user.username}`
-        );
-      }
+    if (count === cfg.threshold) {
+      const role = message.guild.roles.cache.find((r) => r.name === cfg.name);
+      if (role) await member.roles.add(role).catch(() => {});
     }
   }
 }
 
 // =========================
-// BÚSQUEDA Y CATEGORÍAS
+// COMANDOS
 // =========================
 
-function searchProductsByTerm(term) {
-  if (!products.length) return [];
-  const q = term.toLowerCase();
-  return products.filter(
-    (p) =>
-      (p.name && p.name.toLowerCase().includes(q)) ||
-      (p.category && p.category.toLowerCase().includes(q))
-  );
-}
+client.on("messageCreate", async (message) => {
+  if (!message.content.startsWith("!")) return;
+  if (message.author.bot) return;
 
-function searchProductsByCategory(cat) {
-  if (!products.length) return [];
-  const q = cat.toLowerCase();
-  return products.filter(
-    (p) => p.category && p.category.toLowerCase().includes(q)
-  );
-}
+  await handleActivity(message);
+
+  const args = message.content.slice(1).split(" ");
+  const command = args.shift().toLowerCase();
+
+  if (command === "buscar") {
+    const term = args.join(" ").toLowerCase();
+    if (!term) return message.reply("🔎 Usa: `!buscar <texto>`");
+
+    const results = products
+      .filter(
+        (p) =>
+          p.name.toLowerCase().includes(term) ||
+          p.category.toLowerCase().includes(term)
+      )
+      .slice(0, 5);
+
+    if (!results.length)
+      return message.reply(`❌ Sin resultados para: **${term}**`);
+
+    for (const p of results) {
+      await message.channel.send({
+        embeds: [buildProductEmbed(p)],
+        components: buildProductButtons(p),
+      });
+    }
+  }
+
+  if (command === "categoria") {
+    const cat = args.join(" ").toLowerCase().trim();
+    if (!cat) return message.reply("🏷️ Usa: `!categoria <nombre>`");
+
+    const results = products
+      .filter((p) => p.category.includes(cat))
+      .slice(0, 5);
+
+    if (!results.length)
+      return message.reply(`❌ No se encontraron productos en: **${cat}**`);
+
+    for (const p of results) {
+      await message.channel.send({
+        embeds: [buildProductEmbed(p)],
+        components: buildProductButtons(p),
+      });
+    }
+  }
+});
 
 // =========================
 // READY
 // =========================
 
 client.once("ready", async () => {
-  console.log(`🔥 Bot logged in as ${client.user.tag}`);
+  console.log(`🔥 Bot conectado como: ${client.user.tag}`);
 
   const guild = client.guilds.cache.first();
-  if (!guild) {
-    console.log("⚠️ Bot is not in any guild.");
-    return;
-  }
-
   guildGlobal = guild;
 
   await ensureRoles(guild);
   await fetchProductsFromSheet();
 
-  // Semilla inicial (intenta varias veces hasta conseguirlo)
-  const seedInterval = setInterval(async () => {
-    if (seedDone) return clearInterval(seedInterval);
+  // Semilla inicial
+  const interval = setInterval(async () => {
+    if (seedDone) return clearInterval(interval);
     await seedInitialContent(guild);
-  }, 30_000);
+  }, 30000);
 
-  // OFERTAS CADA 2 HORAS
-  setInterval(() => {
-    if (guildGlobal) sendNextOffer(guildGlobal);
-  }, 2 * 60 * 60 * 1000);
+  // Schedulers
+  setInterval(() => sendNextOffer(guild), 2 * 60 * 60 * 1000);
+  setInterval(() => sendDailyHighlight(guild), 24 * 60 * 60 * 1000);
+  setInterval(() => sendMotivation(guild), 6 * 60 * 60 * 1000);
+  setInterval(() => sendNews(guild), 12 * 60 * 60 * 1000);
 
-  // MOTIVACIÓN CADA 6 HORAS
-  setInterval(() => {
-    if (guildGlobal) sendMotivation(guildGlobal);
-  }, 6 * 60 * 60 * 1000);
-
-  // NOTICIAS / TIPS CADA 12 HORAS
-  setInterval(() => {
-    if (guildGlobal) sendNews(guildGlobal);
-  }, 12 * 60 * 60 * 1000);
-
-  // PRODUCTO DESTACADO CADA 24 HORAS
-  setInterval(() => {
-    if (guildGlobal) sendDailyHighlight(guildGlobal);
-  }, 24 * 60 * 60 * 1000);
-
-  console.log("✅ Schedulers active (offers, motivation, news, daily highlight).");
-});
-
-// ==========================
-// BIENVENIDA AUTOMÁTICA
-// ==========================
-
-client.on("guildMemberAdd", (member) => {
-  const channel = member.guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildText && c.name === "welcome"
-  );
-  if (!channel) return;
-
-  channel
-    .send(
-      `🎉 **New member joined: ${member.user.username}**\n\n` +
-        "Welcome to ChinaBuyHub – un espacio privado centrado en compras seguras e inteligentes desde China.\n" +
-        "Lee **#rules** y luego preséntate en **#chat**. 🤝"
-    )
-    .catch(() => {});
-});
-
-// ==========================
-// COMANDOS (!buscar, !categoria) + actividad
-// ==========================
-
-client.on("messageCreate", async (message) => {
-  if (!message.guild) return;
-  if (message.author.bot) return;
-
-  // Contador de actividad y roles
-  await handleActivity(message);
-
-  const content = message.content.trim();
-  if (!content.startsWith("!")) return;
-
-  const [rawCmd, ...args] = content.slice(1).split(/\s+/);
-  const cmd = rawCmd.toLowerCase();
-
-  if (cmd === "buscar") {
-    if (!args.length) {
-      return message.reply(
-        "🔎 Uso: `!buscar <texto>` (por nombre o categoría)"
-      );
-    }
-    const term = args.join(" ");
-    if (!products.length) await fetchProductsFromSheet();
-    const results = searchProductsByTerm(term).slice(0, 5);
-
-    if (!results.length) {
-      return message.reply(
-        `❌ No se encontraron productos que coincidan con: **${term}**`
-      );
-    }
-
-    await message.reply(
-      `✅ Encontrados **${results.length}** resultados para: **${term}**`
-    );
-
-    for (const p of results) {
-      const embed = buildProductEmbed(p);
-      const components = buildProductButtons(p);
-      await message.channel
-        .send({ embeds: [embed], components })
-        .catch(() => {});
-    }
-  }
-
-  if (cmd === "categoria") {
-    if (!args.length) {
-      return message.reply("🏷️ Uso: `!categoria <nombre>`");
-    }
-    const cat = args.join(" ");
-    if (!products.length) await fetchProductsFromSheet();
-    const results = searchProductsByCategory(cat).slice(0, 5);
-
-    if (!results.length) {
-      return message.reply(
-        `❌ No se encontraron productos en la categoría: **${cat}**`
-      );
-    }
-
-    await message.reply(
-      `✅ Mostrando productos de la categoría: **${cat}**`
-    );
-
-    for (const p of results) {
-      const embed = buildProductEmbed(p);
-      const components = buildProductButtons(p);
-      await message.channel
-        .send({ embeds: [embed], components })
-        .catch(() => {});
-    }
-  }
+  console.log("✅ Tareas automáticas activadas");
 });
 
 // ==========================
