@@ -3,7 +3,6 @@ require("dotenv").config();
 const {
   Client,
   GatewayIntentBits,
-  ChannelType,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
@@ -12,23 +11,37 @@ const {
 
 const fetch = require("node-fetch");
 
-const TOKEN = process.env.DISCORD_TOKEN;
-const SHEET_CSV_URL =
-  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRcxnsKB9c1Zy9x3ajJw4cIm8-kgwHtEBj_LTqcSLpXtpltKMTqUdkg8XaOgNJunfVHyRnlTvqOxlap/pub?output=csv";
+// ==========================
+// CONFIG
+// ==========================
 
+// Token del bot (desde Railway)
+const TOKEN = process.env.DISCORD_TOKEN;
+
+// Nueva URL CSV que enviaste
+const SHEET_CSV_URL =
+  "https://doc-0c-50-sheets.googleusercontent.com/pub/h6sqfrlg9m3sbhs0jjmh9nmhns/j1786hcqekfmhamb874ih5tr24/1765114880000/100573730801597486798/100573730801597486798/e@2PACX-1vRcxnsKB9c1Zy9x3ajJw4cIm8-kgwHtEBj_LTqcSLpXtpltKMTqUdkg8XaOgNJunfVHyRnlTvqOxlap?output=csv";
+
+// Lista de productos cargados
 let products = [];
+
+// ==========================
+// CLIENTE DISCORD — INTENTS CORRECTOS
+// ==========================
 
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMessages
+    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent, 
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences
   ]
 });
 
-// ========================
-// CSV PARSER SIMPLE Y SEGURO
-// ========================
+// ==========================
+// CSV PARSER
+// ==========================
 function parseCSVRow(row) {
   const cols = [];
   let current = "";
@@ -49,22 +62,22 @@ function parseCSVRow(row) {
       current += char;
     }
   }
+
   cols.push(current.trim());
   return cols;
 }
 
-// ========================
-// CARGAR PRODUCTOS
-// ========================
+// ==========================
+// CARGAR CSV
+// ==========================
+
 async function fetchProducts() {
   try {
     const res = await fetch(SHEET_CSV_URL);
     const csv = await res.text();
 
     const lines = csv.split("\n").filter((l) => l.trim() !== "");
-    const header = parseCSVRow(lines[0]).map((h) =>
-      h.replace(/(^\"|\"$)/g, "").trim()
-    );
+    const header = parseCSVRow(lines[0]);
 
     const idxFoto = header.indexOf("foto");
     const idxNombre = header.indexOf("nombre");
@@ -89,26 +102,26 @@ async function fetchProducts() {
         kakobuy: get(idxKakobuy),
         usfans: get(idxUsfans),
         cnfans: get(idxCnfans),
-        category: get(idxCat).trim().toLowerCase()
+        category: get(idxCat).toLowerCase().trim()
       };
     });
 
-    console.log("Productos cargados:", products.length);
+    console.log("✅ Productos cargados:", products.length);
   } catch (err) {
-    console.log("Error cargando CSV:", err.message);
+    console.log("❌ Error cargando hoja CSV:", err.message);
   }
 }
 
-// ========================
+// ==========================
 // EMBEDS
-// ========================
+// ==========================
 function buildEmbed(p) {
   return new EmbedBuilder()
     .setColor(0x111827)
     .setTitle(p.name)
     .setDescription(
       (p.category ? `🏷️ **${p.category.toUpperCase()}**\n` : "") +
-        (p.price ? `💰 **${p.price}**` : "")
+      (p.price ? `💰 **${p.price}**` : "")
     )
     .setImage(p.photo);
 }
@@ -143,35 +156,36 @@ function buildButtons(p) {
   return [row];
 }
 
-// ========================
+// ==========================
 // READY
-// ========================
+// ==========================
 client.once("ready", async () => {
-  console.log("🔥 BOT ONLINE COMO:", client.user.tag);
+  console.log("🔥 BOT ONLINE como:", client.user.tag);
+  console.log("🔄 Cargando productos…");
   await fetchProducts();
 });
 
-// ========================
+// ==========================
 // COMANDOS
-// ========================
+// ==========================
 client.on("messageCreate", async (msg) => {
-  if (!msg.content.startsWith("!")) return;
   if (msg.author.bot) return;
+  if (!msg.content.startsWith("!")) return;
 
-  const [cmd, ...args] = msg.content.slice(1).split(" ");
+  const [command, ...args] = msg.content.slice(1).split(" ");
 
-  // -------------------
+  // --------------------
   // !ping
-  // -------------------
-  if (cmd === "ping") {
-    return msg.reply("🏓 Pong! El bot está funcionando.");
+  // --------------------
+  if (command === "ping") {
+    return msg.reply("🏓 *Pong!* El bot está vivo y funcionando.");
   }
 
-  // -------------------
+  // --------------------
   // !buscar
-  // -------------------
-  if (cmd === "buscar") {
-    const text = args.join(" ").toLowerCase();
+  // --------------------
+  if (command === "buscar") {
+    const text = args.join(" ").toLowerCase().trim();
     if (!text) return msg.reply("🔎 Usa: `!buscar jordan`");
 
     const results = products
@@ -179,7 +193,7 @@ client.on("messageCreate", async (msg) => {
       .slice(0, 5);
 
     if (!results.length)
-      return msg.reply("❌ No se encontraron productos.");
+      return msg.reply("❌ No encontré productos con ese nombre.");
 
     for (const p of results) {
       await msg.channel.send({
@@ -189,10 +203,10 @@ client.on("messageCreate", async (msg) => {
     }
   }
 
-  // -------------------
+  // --------------------
   // !categoria
-  // -------------------
-  if (cmd === "categoria") {
+  // --------------------
+  if (command === "categoria") {
     const cat = args.join(" ").toLowerCase().trim();
     if (!cat) return msg.reply("🏷️ Usa: `!categoria zapatillas`");
 
@@ -201,7 +215,7 @@ client.on("messageCreate", async (msg) => {
       .slice(0, 5);
 
     if (!results.length)
-      return msg.reply(`❌ Nada en categoría: ${cat}`);
+      return msg.reply(`❌ No encontré productos en la categoría: **${cat}**`);
 
     for (const p of results) {
       await msg.channel.send({
@@ -212,7 +226,7 @@ client.on("messageCreate", async (msg) => {
   }
 });
 
-// ========================
+// ==========================
 // LOGIN
-// ========================
+// ==========================
 client.login(TOKEN);
