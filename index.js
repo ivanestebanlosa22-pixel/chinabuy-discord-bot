@@ -18,21 +18,17 @@ const fetch = require("node-fetch");
 
 const TOKEN = process.env.DISCORD_TOKEN;
 
-// 👉 CSV PUBLICADO
-const SHEET_CSV_URL =
-  "PEGA_AQUI_TU_URL_CSV_PUBLICA";
+// CSV PUBLICO DE GOOGLE SHEETS
+const SHEET_CSV_URL = "PEGA_AQUI_TU_URL_CSV";
 
-// 👉 CANALES DONDE MANDAR OFERTAS (IDs)
+// IDS DE CANALES PARA OFERTAS
 const OFFER_CHANNELS = [
-  "123456789012345678",
-  "987654321098765432"
+  "ID_CANAL_1",
+  "ID_CANAL_2"
 ];
 
-// 👉 CADA CUÁNTO MANDAR OFERTAS (ms)
+// CADA CUANTO ENVIAR OFERTAS
 const OFFER_INTERVAL = 1000 * 60 * 30; // 30 minutos
-
-// 👉 CUÁNTOS PRODUCTOS POR ENVÍO
-const PRODUCTS_PER_POST = 1;
 
 let products = [];
 let offerIndex = 0;
@@ -50,7 +46,7 @@ const client = new Client({
 });
 
 // ==========================
-// LIMPIEZA ROBUSTA
+// LIMPIEZA SEGURA
 // ==========================
 
 function clean(text = "") {
@@ -65,19 +61,19 @@ function clean(text = "") {
 function get(row, key) {
   return clean(
     row[key] ??
-    row[key.toLowerCase()] ??
-    row[key.toUpperCase()] ??
+    row[key?.toLowerCase()] ??
+    row[key?.toUpperCase()] ??
     ""
   );
 }
 
 // ==========================
-// CARGAR PRODUCTOS
+// CARGAR CSV
 // ==========================
 
 async function fetchProducts() {
   try {
-    console.log("🔄 Descargando CSV…");
+    console.log("🔄 Descargando CSV...");
     const res = await fetch(SHEET_CSV_URL);
     const csvText = await res.text();
 
@@ -86,7 +82,7 @@ async function fetchProducts() {
       skipEmptyLines: true
     });
 
-    console.log("🧾 HEADERS:", parsed.meta.fields);
+    console.log("🧾 HEADERS CSV:", parsed.meta.fields);
 
     products = parsed.data
       .map((row) => ({
@@ -102,7 +98,7 @@ async function fetchProducts() {
 
     console.log("✅ Productos cargados:", products.length);
   } catch (err) {
-    console.error("❌ ERROR CSV:", err);
+    console.error("❌ ERROR cargando CSV:", err);
   }
 }
 
@@ -125,7 +121,7 @@ function buildEmbed(p) {
 function buildButtons(p) {
   const row = new ActionRowBuilder();
 
-  if (p.usfans.startsWith("http")) {
+  if (p.usfans?.startsWith("http")) {
     row.addComponents(
       new ButtonBuilder()
         .setLabel("USFANS")
@@ -134,7 +130,7 @@ function buildButtons(p) {
     );
   }
 
-  if (p.cnfans.startsWith("http")) {
+  if (p.cnfans?.startsWith("http")) {
     row.addComponents(
       new ButtonBuilder()
         .setLabel("CNFANS")
@@ -143,7 +139,7 @@ function buildButtons(p) {
     );
   }
 
-  if (p.kakobuy.startsWith("http")) {
+  if (p.kakobuy?.startsWith("http")) {
     row.addComponents(
       new ButtonBuilder()
         .setLabel("Kakobuy")
@@ -156,14 +152,19 @@ function buildButtons(p) {
 }
 
 // ==========================
-// ENVIAR OFERTAS AUTOMÁTICAS
+// ENVIO AUTOMATICO
 // ==========================
 
 async function sendAutoOffers() {
-  if (!products.length) return;
+  if (!products.length) {
+    console.log("⚠️ No hay productos para enviar");
+    return;
+  }
 
   const product = products[offerIndex % products.length];
   offerIndex++;
+
+  console.log("📤 Enviando oferta:", product.name);
 
   for (const channelId of OFFER_CHANNELS) {
     try {
@@ -175,7 +176,7 @@ async function sendAutoOffers() {
         components: buildButtons(product)
       });
     } catch (err) {
-      console.error("❌ Error enviando a canal", channelId, err.message);
+      console.error("❌ Error canal", channelId, err.message);
     }
   }
 }
@@ -186,7 +187,11 @@ async function sendAutoOffers() {
 
 client.once("ready", async () => {
   console.log("🔥 BOT ONLINE:", client.user.tag);
+
   await fetchProducts();
+
+  // ENVIO FORZADO AL ARRANCAR (TEST)
+  sendAutoOffers();
 
   setInterval(sendAutoOffers, OFFER_INTERVAL);
 });
@@ -202,6 +207,19 @@ client.on("messageCreate", async (msg) => {
 
   if (cmd === "ping") {
     return msg.reply("🏓 Pong! Bot activo.");
+  }
+
+  // FORZAR OFERTA MANUAL
+  if (cmd === "oferta") {
+    if (!products.length)
+      return msg.reply("❌ No hay productos cargados.");
+
+    const product = products[Math.floor(Math.random() * products.length)];
+
+    return msg.channel.send({
+      embeds: [buildEmbed(product)],
+      components: buildButtons(product)
+    });
   }
 
   if (cmd === "buscar") {
