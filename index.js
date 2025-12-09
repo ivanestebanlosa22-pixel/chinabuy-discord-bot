@@ -15,32 +15,31 @@ const fetch = require("node-fetch");
 // CONFIG
 // ==========================
 
-// Token del bot (desde Railway)
+// Token del bot (Railway)
 const TOKEN = process.env.DISCORD_TOKEN;
 
-// Nueva URL CSV que enviaste
+// Tu nueva URL CSV (muy estable)
 const SHEET_CSV_URL =
   "https://doc-0c-50-sheets.googleusercontent.com/pub/h6sqfrlg9m3sbhs0jjmh9nmhns/j1786hcqekfmhamb874ih5tr24/1765114880000/100573730801597486798/100573730801597486798/e@2PACX-1vRcxnsKB9c1Zy9x3ajJw4cIm8-kgwHtEBj_LTqcSLpXtpltKMTqUdkg8XaOgNJunfVHyRnlTvqOxlap?output=csv";
 
-// Lista de productos cargados
 let products = [];
 
 // ==========================
-// CLIENTE DISCORD — INTENTS CORRECTOS
+// CLIENT DISCORD — INTENTS CORRECTOS
 // ==========================
 
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, 
+    GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildPresences
   ]
 });
 
 // ==========================
-// CSV PARSER
+// CSV PARSER ROBUSTO
 // ==========================
 function parseCSVRow(row) {
   const cols = [];
@@ -48,18 +47,18 @@ function parseCSVRow(row) {
   let insideQuotes = false;
 
   for (let i = 0; i < row.length; i++) {
-    const char = row[i];
+    const c = row[i];
 
-    if (char === '"' && row[i + 1] === '"') {
+    if (c === '"' && row[i + 1] === '"') {
       current += '"';
       i++;
-    } else if (char === '"') {
+    } else if (c === '"') {
       insideQuotes = !insideQuotes;
-    } else if (char === "," && !insideQuotes) {
+    } else if (c === "," && !insideQuotes) {
       cols.push(current.trim());
       current = "";
     } else {
-      current += char;
+      current += c;
     }
   }
 
@@ -68,56 +67,72 @@ function parseCSVRow(row) {
 }
 
 // ==========================
-// CARGAR CSV
+// FUNCIÓN DE LIMPIEZA
+// ==========================
+
+function clean(text) {
+  if (!text) return "";
+  return text
+    .replace(/\r?\n/g, " ")      // eliminar saltos de línea
+    .replace(/""/g, '"')         // desdoblar comillas
+    .replace(/(^"|"$)/g, "")     // quitar comillas externas
+    .replace(/\s+/g, " ")        // compactar espacios
+    .trim();
+}
+
+// ==========================
+// CARGADOR DE PRODUCTOS
 // ==========================
 
 async function fetchProducts() {
   try {
+    console.log("🔄 Descargando CSV…");
     const res = await fetch(SHEET_CSV_URL);
     const csv = await res.text();
 
     const lines = csv.split("\n").filter((l) => l.trim() !== "");
-    const header = parseCSVRow(lines[0]);
+    const header = parseCSVRow(clean(lines[0]));
 
     const idxFoto = header.indexOf("foto");
     const idxNombre = header.indexOf("nombre");
     const idxPrecio = header.indexOf("precio");
     const idxKakobuy = header.indexOf("LINK kakobuy");
-    const idxUsfans = header.indexOf("link usfans");
+    const idxUsfans = header.indexOf(" link usfans");
     const idxCnfans = header.indexOf("link de cnfans");
     const idxCat = header.indexOf("CATEGRIAS");
 
     products = lines.slice(1).map((line) => {
-      const cols = parseCSVRow(line);
+      const cols = parseCSVRow(line).map(clean);
 
       const get = (idx) =>
-        idx >= 0 && idx < cols.length
-          ? cols[idx].replace(/(^\"|\"$)/g, "").trim()
-          : "";
+        idx >= 0 && idx < cols.length ? cols[idx] : "";
 
       return {
-        name: get(idxNombre),
-        photo: get(idxFoto),
-        price: get(idxPrecio),
-        kakobuy: get(idxKakobuy),
-        usfans: get(idxUsfans),
-        cnfans: get(idxCnfans),
-        category: get(idxCat).toLowerCase().trim()
+        name: clean(get(idxNombre)),
+        photo: clean(get(idxFoto)),
+        price: clean(get(idxPrecio)),
+        kakobuy: clean(get(idxKakobuy)),
+        usfans: clean(get(idxUsfans)),
+        cnfans: clean(get(idxCnfans)),
+        category: clean(get(idxCat)).toLowerCase()
       };
     });
 
-    console.log("✅ Productos cargados:", products.length);
+    products = products.filter((p) => p.name && p.photo);
+
+    console.log("✅ Productos cargados correctamente:", products.length);
   } catch (err) {
-    console.log("❌ Error cargando hoja CSV:", err.message);
+    console.error("❌ ERROR cargando CSV:", err.message);
   }
 }
 
 // ==========================
-// EMBEDS
+// EMBEDS + BOTONES
 // ==========================
+
 function buildEmbed(p) {
   return new EmbedBuilder()
-    .setColor(0x111827)
+    .setColor(0x0ea5e9)
     .setTitle(p.name)
     .setDescription(
       (p.category ? `🏷️ **${p.category.toUpperCase()}**\n` : "") +
@@ -159,37 +174,41 @@ function buildButtons(p) {
 // ==========================
 // READY
 // ==========================
+
 client.once("ready", async () => {
   console.log("🔥 BOT ONLINE como:", client.user.tag);
-  console.log("🔄 Cargando productos…");
   await fetchProducts();
 });
 
 // ==========================
 // COMANDOS
 // ==========================
+
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
   if (!msg.content.startsWith("!")) return;
 
   const [command, ...args] = msg.content.slice(1).split(" ");
 
-  // --------------------
+  // ================
   // !ping
-  // --------------------
+  // ================
   if (command === "ping") {
-    return msg.reply("🏓 *Pong!* El bot está vivo y funcionando.");
+    return msg.reply("🏓 Pong! El bot está funcionando.");
   }
 
-  // --------------------
+  // ================
   // !buscar
-  // --------------------
+  // ================
   if (command === "buscar") {
-    const text = args.join(" ").toLowerCase().trim();
-    if (!text) return msg.reply("🔎 Usa: `!buscar jordan`");
+    const term = args.join(" ").toLowerCase().trim();
+
+    if (!term) return msg.reply("🔎 Usa: `!buscar jordan`");
 
     const results = products
-      .filter((p) => p.name.toLowerCase().includes(text))
+      .filter((p) =>
+        p.name.toLowerCase().includes(term)
+      )
       .slice(0, 5);
 
     if (!results.length)
@@ -203,11 +222,12 @@ client.on("messageCreate", async (msg) => {
     }
   }
 
-  // --------------------
+  // ================
   // !categoria
-  // --------------------
+  // ================
   if (command === "categoria") {
     const cat = args.join(" ").toLowerCase().trim();
+
     if (!cat) return msg.reply("🏷️ Usa: `!categoria zapatillas`");
 
     const results = products
@@ -215,7 +235,7 @@ client.on("messageCreate", async (msg) => {
       .slice(0, 5);
 
     if (!results.length)
-      return msg.reply(`❌ No encontré productos en la categoría: **${cat}**`);
+      return msg.reply(`❌ Nada encontrado en la categoría: **${cat}**`);
 
     for (const p of results) {
       await msg.channel.send({
