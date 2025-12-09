@@ -18,10 +18,24 @@ const fetch = require("node-fetch");
 
 const TOKEN = process.env.DISCORD_TOKEN;
 
+// 👉 CSV PUBLICADO
 const SHEET_CSV_URL =
-  "https://doc-0c-50-sheets.googleusercontent.com/pub/h6sqfrlg9m3sbhs0jjmh9nmhns/j1786hcqekfmhamb874ih5tr24/1765114880000/100573730801597486798/100573730801597486798/e@2PACX-1vRcxnsKB9c1Zy9x3ajJw4cIm8-kgwHtEBj_LTqcSLpXtpltKMTqUdkg8XaOgNJunfVHyRnlTvqOxlap?output=csv";
+  "PEGA_AQUI_TU_URL_CSV_PUBLICA";
+
+// 👉 CANALES DONDE MANDAR OFERTAS (IDs)
+const OFFER_CHANNELS = [
+  "123456789012345678",
+  "987654321098765432"
+];
+
+// 👉 CADA CUÁNTO MANDAR OFERTAS (ms)
+const OFFER_INTERVAL = 1000 * 60 * 30; // 30 minutos
+
+// 👉 CUÁNTOS PRODUCTOS POR ENVÍO
+const PRODUCTS_PER_POST = 1;
 
 let products = [];
+let offerIndex = 0;
 
 // ==========================
 // DISCORD CLIENT
@@ -31,27 +45,34 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences
+    GatewayIntentBits.MessageContent
   ]
 });
 
 // ==========================
-// LIMPIEZA DE CAMPOS
+// LIMPIEZA ROBUSTA
 // ==========================
 
 function clean(text = "") {
   return String(text)
-    .replace(/\r?\n/g, " ") 
-    .replace(/""/g, '"')
-    .replace(/(^"|"$)/g, "")
+    .replace(/=HYPERLINK\("([^"]+)",.*?\)/gi, "$1")
+    .replace(/\r?\n/g, " ")
     .replace(/\s+/g, " ")
+    .replace(/^"|"$/g, "")
     .trim();
 }
 
+function get(row, key) {
+  return clean(
+    row[key] ??
+    row[key.toLowerCase()] ??
+    row[key.toUpperCase()] ??
+    ""
+  );
+}
+
 // ==========================
-// CARGAR CSV — AHORA CON PAPAPARSE
+// CARGAR PRODUCTOS
 // ==========================
 
 async function fetchProducts() {
@@ -65,21 +86,23 @@ async function fetchProducts() {
       skipEmptyLines: true
     });
 
-    products = parsed.data.map((row) => ({
-      photo: clean(row["foto"]),
-      name: clean(row["nombre"]),
-      price: clean(row["precio"]),
-      kakobuy: clean(row["LINK kakobuy"]),
-      usfans: clean(row[" link usfans"]),
-      cnfans: clean(row["link de cnfans"]),
-      category: clean(row["CATEGRIAS"]).toLowerCase()
-    }));
+    console.log("🧾 HEADERS:", parsed.meta.fields);
 
-    products = products.filter((p) => p.name && p.photo);
+    products = parsed.data
+      .map((row) => ({
+        photo: get(row, "foto"),
+        name: get(row, "nombre"),
+        price: get(row, "precio"),
+        kakobuy: get(row, "link kakobuy"),
+        usfans: get(row, "link usfans"),
+        cnfans: get(row, "link de cnfans"),
+        category: get(row, "categorias").toLowerCase()
+      }))
+      .filter((p) => p.name && p.photo);
 
     console.log("✅ Productos cargados:", products.length);
   } catch (err) {
-    console.error("❌ ERROR cargando CSV:", err);
+    console.error("❌ ERROR CSV:", err);
   }
 }
 
@@ -92,40 +115,69 @@ function buildEmbed(p) {
     .setColor(0x0ea5e9)
     .setTitle(p.name)
     .setDescription(
-      (p.category ? `🏷️ **${p.category.toUpperCase()}**\n` : "") +
-      (p.price ? `💰 **${p.price}**` : "")
+      `${p.category ? `🏷️ **${p.category.toUpperCase()}**\n` : ""}` +
+      `${p.price ? `💰 **${p.price}**` : ""}`
     )
-    .setImage(p.photo);
+    .setImage(p.photo)
+    .setFooter({ text: "🔥 Oferta automática" });
 }
 
 function buildButtons(p) {
   const row = new ActionRowBuilder();
 
-  if (p.usfans?.startsWith("http"))
+  if (p.usfans.startsWith("http")) {
     row.addComponents(
       new ButtonBuilder()
         .setLabel("USFANS")
         .setStyle(ButtonStyle.Link)
         .setURL(p.usfans)
     );
+  }
 
-  if (p.cnfans?.startsWith("http"))
+  if (p.cnfans.startsWith("http")) {
     row.addComponents(
       new ButtonBuilder()
         .setLabel("CNFANS")
         .setStyle(ButtonStyle.Link)
         .setURL(p.cnfans)
     );
+  }
 
-  if (p.kakobuy?.startsWith("http"))
+  if (p.kakobuy.startsWith("http")) {
     row.addComponents(
       new ButtonBuilder()
         .setLabel("Kakobuy")
         .setStyle(ButtonStyle.Link)
         .setURL(p.kakobuy)
     );
+  }
 
-  return [row];
+  return row.components.length ? [row] : [];
+}
+
+// ==========================
+// ENVIAR OFERTAS AUTOMÁTICAS
+// ==========================
+
+async function sendAutoOffers() {
+  if (!products.length) return;
+
+  const product = products[offerIndex % products.length];
+  offerIndex++;
+
+  for (const channelId of OFFER_CHANNELS) {
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (!channel) continue;
+
+      await channel.send({
+        embeds: [buildEmbed(product)],
+        components: buildButtons(product)
+      });
+    } catch (err) {
+      console.error("❌ Error enviando a canal", channelId, err.message);
+    }
+  }
 }
 
 // ==========================
@@ -133,8 +185,10 @@ function buildButtons(p) {
 // ==========================
 
 client.once("ready", async () => {
-  console.log("🔥 BOT ACTIVO como:", client.user.tag);
+  console.log("🔥 BOT ONLINE:", client.user.tag);
   await fetchProducts();
+
+  setInterval(sendAutoOffers, OFFER_INTERVAL);
 });
 
 // ==========================
@@ -142,19 +196,16 @@ client.once("ready", async () => {
 // ==========================
 
 client.on("messageCreate", async (msg) => {
-  if (msg.author.bot) return;
-  if (!msg.content.startsWith("!")) return;
+  if (msg.author.bot || !msg.content.startsWith("!")) return;
 
-  const [command, ...args] = msg.content.slice(1).split(" ");
+  const [cmd, ...args] = msg.content.slice(1).split(" ");
 
-  // !ping
-  if (command === "ping") {
-    return msg.reply("🏓 Pong! Estoy funcionando.");
+  if (cmd === "ping") {
+    return msg.reply("🏓 Pong! Bot activo.");
   }
 
-  // !buscar
-  if (command === "buscar") {
-    const term = args.join(" ").toLowerCase().trim();
+  if (cmd === "buscar") {
+    const term = args.join(" ").toLowerCase();
     if (!term) return msg.reply("🔎 Usa: `!buscar jordan`");
 
     const results = products
@@ -162,19 +213,18 @@ client.on("messageCreate", async (msg) => {
       .slice(0, 5);
 
     if (!results.length)
-      return msg.reply("❌ No encontré productos con ese nombre.");
+      return msg.reply("❌ No encontré productos.");
 
     for (const p of results) {
-      msg.channel.send({
+      await msg.channel.send({
         embeds: [buildEmbed(p)],
         components: buildButtons(p)
       });
     }
   }
 
-  // !categoria
-  if (command === "categoria") {
-    const cat = args.join(" ").toLowerCase().trim();
+  if (cmd === "categoria") {
+    const cat = args.join(" ").toLowerCase();
     if (!cat) return msg.reply("🏷️ Usa: `!categoria zapatillas`");
 
     const results = products
@@ -182,10 +232,10 @@ client.on("messageCreate", async (msg) => {
       .slice(0, 5);
 
     if (!results.length)
-      return msg.reply(`❌ Nada encontrado en la categoría: **${cat}**`);
+      return msg.reply("❌ No hay productos en esa categoría.");
 
     for (const p of results) {
-      msg.channel.send({
+      await msg.channel.send({
         embeds: [buildEmbed(p)],
         components: buildButtons(p)
       });
@@ -196,4 +246,5 @@ client.on("messageCreate", async (msg) => {
 // ==========================
 // LOGIN
 // ==========================
+
 client.login(TOKEN);
