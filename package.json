@@ -9,8 +9,7 @@
   },
   "dependencies": {
     "discord.js": "^14.16.0",
-    "papaparse": "^5.4.1",
-    "node-fetch": "^3.3.2",
+    "googleapis": "^128.0.0",
     "dotenv": "^16.4.5"
   }
 }
