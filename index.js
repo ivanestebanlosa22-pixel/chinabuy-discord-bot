@@ -8,7 +8,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionsBitField
+  ActivityType
 } = require("discord.js");
 
 // ==========================
@@ -116,8 +116,7 @@ function crearEmbedProducto(p, tipo = "oferta") {
     .setDescription(`💰 **Precio:** ${clean(p[2])}\n\n✨ **Máxima calidad garantizada**`)
     .setImage(clean(p[0]))
     .setFooter({ 
-      text: tipo === "oferta" ? "🔥 Oferta exclusiva" : "ChinaBuyHub - Productos de calidad",
-      iconURL: "https://i.postimg.cc/W1QY8rJC/logo.png"
+      text: tipo === "oferta" ? "🔥 Oferta exclusiva" : "ChinaBuyHub - Productos de calidad"
     })
     .setTimestamp();
   
@@ -128,9 +127,9 @@ function crearBotonesProducto(p) {
   const row = new ActionRowBuilder();
   
   const agentes = [
-    { label: "🛒 Comprar en USFans", url: clean(p[4]), emoji: "⭐" },
-    { label: "🛒 Comprar en Kakobuy", url: clean(p[3]), emoji: null },
-    { label: "🛒 Comprar en CNFans", url: clean(p[5]), emoji: null }
+    { label: "🛒 Comprar en USFans", url: clean(p[4]) },
+    { label: "🛒 Comprar en Kakobuy", url: clean(p[3]) },
+    { label: "🛒 Comprar en CNFans", url: clean(p[5]) }
   ];
   
   agentes.forEach(agente => {
@@ -139,7 +138,6 @@ function crearBotonesProducto(p) {
         .setLabel(agente.label)
         .setStyle(ButtonStyle.Link)
         .setURL(agente.url);
-      if (agente.emoji) btn.setEmoji(agente.emoji);
       row.addComponents(btn);
     }
   });
@@ -178,8 +176,12 @@ async function enviarOferta() {
     });
     
     // Añadir reacción automática
-    await mensaje.react("🔥");
-    await mensaje.react("❤️");
+    try {
+      await mensaje.react("🔥");
+      await mensaje.react("❤️");
+    } catch (err) {
+      console.log("⚠️ No se pudieron añadir reacciones");
+    }
     
     stats.productosEnviados++;
     console.log(`📤 Oferta enviada: ${clean(p[1])} (${stats.productosEnviados} total)`);
@@ -339,32 +341,33 @@ const comandos = {
 // ==========================
 
 client.once("ready", async () => {
-  console.log(`
-╔════════════════════════════════════════╗
-║   🤖 BOT DISCORD ONLINE                ║
-║   Usuario: ${client.user.tag.padEnd(26)} ║
-║   Servidores: ${client.guilds.cache.size.toString().padEnd(23)} ║
-╚════════════════════════════════════════╝
-  `);
+  console.log("===========================================");
+  console.log("   BOT DISCORD ONLINE");
+  console.log("   Usuario: " + client.user.tag);
+  console.log("   Servidores: " + client.guilds.cache.size);
+  console.log("===========================================");
   
   // Configurar estado
-  client.user.setActivity("!ayuda | ChinaBuyHub", { type: "WATCHING" });
+  client.user.setPresence({
+    activities: [{ name: "!ayuda | ChinaBuyHub", type: ActivityType.Watching }],
+    status: "online"
+  });
   
   // Cargar productos
   const total = await cargarProductos();
-  console.log(`📦 ${total} productos listos\n`);
+  console.log("📦 " + total + " productos listos");
   
   // Actualizar stats
   client.guilds.cache.forEach(guild => {
     stats.miembrosTotal += guild.memberCount;
   });
   
-  // Envío inicial de prueba (opcional, comenta si no quieres)
+  // Envío inicial de prueba (después de 5 segundos)
   setTimeout(enviarOferta, 5000);
   
   // Programar envíos automáticos
   setInterval(enviarOferta, OFFER_INTERVAL);
-  console.log(`⏰ Ofertas automáticas cada ${OFFER_INTERVAL / 1000 / 60} minutos\n`);
+  console.log("⏰ Ofertas automáticas cada " + (OFFER_INTERVAL / 1000 / 60) + " minutos");
   
   // Recargar productos cada 6 horas
   setInterval(cargarProductos, 1000 * 60 * 60 * 6);
@@ -381,20 +384,20 @@ client.on("guildMemberAdd", async (member) => {
     
     const welcomeEmbed = new EmbedBuilder()
       .setColor(0x00ff00)
-      .setTitle(`¡Bienvenido/a ${member.user.username}! 🎉`)
+      .setTitle("¡Bienvenido/a " + member.user.username + "! 🎉")
       .setDescription(
-        `Gracias por unirte a **ChinaBuyHub**\n\n` +
-        `🛍️ Aquí encontrarás las mejores ofertas en réplicas\n` +
-        `📱 Usa \`!ayuda\` para ver todos los comandos\n` +
-        `🎁 Usa \`!guia\` para aprender a comprar\n\n` +
-        `🔥 ¡Disfruta de nuestras ofertas exclusivas!`
+        "Gracias por unirte a **ChinaBuyHub**\n\n" +
+        "🛍️ Aquí encontrarás las mejores ofertas en réplicas\n" +
+        "📱 Usa `!ayuda` para ver todos los comandos\n" +
+        "🎁 Usa `!guia` para aprender a comprar\n\n" +
+        "🔥 ¡Disfruta de nuestras ofertas exclusivas!"
       )
       .setThumbnail(member.user.displayAvatarURL())
-      .setFooter({ text: `Miembro #${member.guild.memberCount}` })
+      .setFooter({ text: "Miembro #" + member.guild.memberCount })
       .setTimestamp();
     
     await channel.send({ 
-      content: `${member}`, 
+      content: member.toString(), 
       embeds: [welcomeEmbed] 
     });
     
@@ -421,7 +424,7 @@ client.on("messageCreate", async (msg) => {
     try {
       await comandos[comando](msg, args);
     } catch (error) {
-      console.error(`❌ Error ejecutando ${comando}:`, error.message);
+      console.error("❌ Error ejecutando " + comando + ":", error.message);
       msg.reply("❌ Hubo un error ejecutando el comando. Inténtalo de nuevo.");
     }
   }
@@ -451,11 +454,20 @@ client.login(DISCORD_TOKEN).catch(error => {
 
 ---
 
-## 📋 Variables de entorno (Railway Raw Editor):
+## ✅ Cambios realizados:
+
+1. **Importé `ActivityType`** correctamente de discord.js
+2. **Eliminé template literals problemáticos** en los console.log
+3. **Simplifiqué la configuración de presencia**
+4. **Corregí todos los strings** que podían causar problemas
+
+---
+
+## 📋 Variables necesarias en Railway:
 ```
 DISCORD_TOKEN=tu_token_de_discord
 SPREADSHEET_ID=1LhmTBYh345mVsPWPAc63m4Z2gtPq0eZSXTnaRHPf3BI
-OFFER_CHANNEL_ID=id_del_canal_ofertas
-WELCOME_CHANNEL_ID=id_del_canal_bienvenida
+OFFER_CHANNEL_ID=id_canal_ofertas
+WELCOME_CHANNEL_ID=id_canal_bienvenida
 OFFER_INTERVAL=7200000
-GOOGLE_CREDENTIALS=(el mismo JSON)
+GOOGLE_CREDENTIALS=(el JSON completo)
