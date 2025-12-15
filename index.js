@@ -19,11 +19,11 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEET_RANGE = "MAIN!A:H";
 
-// IDs de canales (FIJOS)
-const OFFER_CHANNEL_ID = "1447213635889004648";      // canal ofertas
-const WELCOME_CHANNEL_ID = "1447213627995197622";   // canal bienvenida
+// IDs de canales (TUS IDs)
+const OFFER_CHANNEL_ID = "1447213635889004648";
+const WELCOME_CHANNEL_ID = "1447213627995197622";
 
-// Intervalo de ofertas (2 horas)
+// Intervalo de ofertas (cada 2 horas)
 const OFFER_INTERVAL = parseInt(process.env.OFFER_INTERVAL) || 1000 * 60 * 120;
 
 // ==========================
@@ -84,10 +84,10 @@ async function cargarProductos() {
     const filas = res.data.values || [];
     productos = filas.slice(1).filter(p => p[0] && p[1]);
 
-    console.log("Productos cargados: " + productos.length);
+    console.log("Productos cargados:", productos.length);
     return productos.length;
   } catch (error) {
-    console.error("Error cargando productos: " + error.message);
+    console.error("Error cargando productos:", error.message);
     return 0;
   }
 }
@@ -110,14 +110,21 @@ function getRandomProduct() {
 // EMBEDS
 // ==========================
 
-function crearEmbedProducto(p, tipo = "oferta") {
+function crearEmbedProducto(p, tipo) {
+  if (!tipo) tipo = "oferta";
+
   return new EmbedBuilder()
     .setColor(tipo === "oferta" ? 0x00ff00 : 0x0ea5e9)
     .setTitle(clean(p[1]))
-    .setDescription("💰 **Precio:** " + clean(p[2]) + "\n\n✨ **Máxima calidad garantizada**")
+    .setDescription(
+      "💰 **Precio:** " + clean(p[2]) +
+      "\n\n✨ **Máxima calidad garantizada**"
+    )
     .setImage(clean(p[0]))
     .setFooter({
-      text: tipo === "oferta" ? "🔥 Oferta exclusiva" : "ChinaBuyHub - Productos de calidad"
+      text: tipo === "oferta"
+        ? "🔥 Oferta exclusiva"
+        : "ChinaBuyHub - Productos de calidad"
     })
     .setTimestamp();
 }
@@ -146,7 +153,7 @@ function crearBotonesProducto(p) {
 }
 
 // ==========================
-// OFERTAS AUTOMÁTICAS
+// ENVIAR OFERTA
 // ==========================
 
 async function enviarOferta() {
@@ -167,8 +174,11 @@ async function enviarOferta() {
     if (!channel) return;
 
     const mensaje = await channel.send({
-      content: "🔥 **¡NUEVA OFERTA!** 🔥",
-      embeds: [crearEmbedProducto(p)],
+      content:
+        "🔥 **¡NUEVA OFERTA!** 🔥\n\n" +
+        "👉 **Nuevo usuario:** Regístrate y obtén hasta **800€ en bonos**\n" +
+        "🎁 https://www.usfans.com/register?ref=RCGD5Y",
+      embeds: [crearEmbedProducto(p, "oferta")],
       components: crearBotonesProducto(p)
     });
 
@@ -176,17 +186,57 @@ async function enviarOferta() {
     await mensaje.react("❤️");
 
     stats.productosEnviados++;
-  } catch (e) {
-    console.error("Error enviando oferta: " + e.message);
+  } catch (error) {
+    console.error("Error enviando oferta:", error.message);
   }
 }
 
 // ==========================
-// EVENTO BOT LISTO (SIN ADVERTENCIA)
+// COMANDOS
+// ==========================
+
+const comandos = {
+  "!producto": async (msg) => {
+    const p = getRandomProduct();
+    if (!p) return msg.reply("❌ No hay productos disponibles");
+
+    await msg.reply({
+      embeds: [crearEmbedProducto(p, "busqueda")],
+      components: crearBotonesProducto(p)
+    });
+
+    stats.comandosUsados++;
+  },
+
+  "!stats": async (msg) => {
+    const uptime = Math.floor((Date.now() - stats.inicioBot) / 60000);
+
+    const embed = new EmbedBuilder()
+      .setColor(0x9b59b6)
+      .setTitle("📊 Estadísticas del Bot")
+      .addFields(
+        { name: "📦 Productos", value: String(productos.length), inline: true },
+        { name: "🔥 Ofertas", value: String(stats.productosEnviados), inline: true },
+        { name: "⚡ Comandos", value: String(stats.comandosUsados), inline: true },
+        { name: "⏱️ Uptime", value: uptime + " min", inline: true }
+      )
+      .setTimestamp();
+
+    await msg.reply({ embeds: [embed] });
+    stats.comandosUsados++;
+  },
+
+  "!ping": async (msg) => {
+    await msg.reply("🏓 Pong: " + client.ws.ping + "ms");
+  }
+};
+
+// ==========================
+// BOT LISTO (SIN ADVERTENCIA)
 // ==========================
 
 client.once("clientReady", async () => {
-  console.log("BOT ONLINE: " + client.user.tag);
+  console.log("BOT ONLINE:", client.user.tag);
 
   client.user.setPresence({
     activities: [{ name: "!ayuda | ChinaBuyHub", type: ActivityType.Watching }],
@@ -210,12 +260,12 @@ client.on("guildMemberAdd", async member => {
 
     await channel.send(`👋 Bienvenido ${member}`);
   } catch (e) {
-    console.error("Error bienvenida: " + e.message);
+    console.error("Error bienvenida:", e.message);
   }
 });
 
 // ==========================
-// COMANDOS
+// MENSAJES
 // ==========================
 
 client.on("messageCreate", async msg => {
@@ -224,8 +274,12 @@ client.on("messageCreate", async msg => {
   const args = msg.content.trim().split(/\s+/);
   const comando = args.shift().toLowerCase();
 
-  if (comando === "!ping") {
-    return msg.reply("🏓 Pong: " + client.ws.ping + "ms");
+  if (comandos[comando]) {
+    try {
+      await comandos[comando](msg, args);
+    } catch (e) {
+      console.error("Error comando:", e.message);
+    }
   }
 });
 
