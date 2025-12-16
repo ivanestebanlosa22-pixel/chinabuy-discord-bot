@@ -1,5 +1,4 @@
 require("dotenv").config();
-
 const { google } = require("googleapis");
 const {
   Client,
@@ -11,140 +10,121 @@ const {
   ActivityType
 } = require("discord.js");
 
-// ==========================
-// CONFIG
-// ==========================
+/* =========================
+   CONFIG
+========================= */
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const GOOGLE_CREDENTIALS = process.env.GOOGLE_CREDENTIALS;
+
+const CATALOG_CHANNEL_ID = "1447213633368096900";
+
+const WEBSITE_URL = "https://www.chinabuyhub.com/";
+const SPREADSHEET_URL =
+  "https://docs.google.com/spreadsheets/d/1fxzvxQBmqgNlR1QkfJRuWVg7ic_nT_5-k_Y4fBPg5bY";
+const EXTENSION_URL =
+  "https://chromewebstore.google.com/detail/lkbdnacknmpmcojllhlekighhchhknfd";
+
 const SHEET_RANGE = "MAIN!A:H";
+const CATALOG_BATCH = 50;
+const SEND_DELAY = 1500;
 
-// IDs de canales (TUS IDs)
-const OFFER_CHANNEL_ID = "1447213635889004648";
-const WELCOME_CHANNEL_ID = "1447213627995197622";
-
-// Intervalo de ofertas (cada 2 horas)
-const OFFER_INTERVAL = parseInt(process.env.OFFER_INTERVAL) || 1000 * 60 * 120;
-
-// ==========================
-// DISCORD CLIENT
-// ==========================
+/* =========================
+   CLIENT
+========================= */
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.MessageContent
   ]
 });
 
-// ==========================
-// ESTADO
-// ==========================
+/* =========================
+   STATE
+========================= */
 
-let productos = [];
-let filaActual = 0;
+let products = [];
 let stats = {
-  productosEnviados: 0,
-  miembrosTotal: 0,
-  comandosUsados: 0,
-  inicioBot: new Date()
+  sent: 0,
+  commands: 0,
+  started: Date.now()
 };
 
-// ==========================
-// GOOGLE AUTH
-// ==========================
+/* =========================
+   GOOGLE AUTH
+========================= */
 
-async function getAuthClient() {
-  const credentialsJSON = process.env.GOOGLE_CREDENTIALS;
-  if (!credentialsJSON) {
-    throw new Error("GOOGLE_CREDENTIALS no configurado");
-  }
-  const credentials = JSON.parse(credentialsJSON);
-  return new google.auth.GoogleAuth({
-    credentials,
+async function getAuth() {
+  const auth = new google.auth.GoogleAuth({
+    credentials: JSON.parse(GOOGLE_CREDENTIALS),
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
   });
+  return auth;
 }
 
-// ==========================
-// CARGAR PRODUCTOS
-// ==========================
+/* =========================
+   LOAD PRODUCTS
+========================= */
 
-async function cargarProductos() {
+async function loadProducts() {
   try {
-    const auth = await getAuthClient();
+    const auth = await getAuth();
     const sheets = google.sheets({ version: "v4", auth });
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: SHEET_RANGE
     });
 
-    const filas = res.data.values || [];
-    productos = filas.slice(1).filter(p => p[0] && p[1]);
+    const rows = res.data.values || [];
+    products = rows.slice(1).filter(r => r[0] && r[1]);
 
-    console.log("Productos cargados:", productos.length);
-    return productos.length;
-  } catch (error) {
-    console.error("Error cargando productos:", error.message);
-    return 0;
+    console.log(`Products loaded: ${products.length}`);
+  } catch (e) {
+    console.error("Error loading products:", e.message);
   }
 }
 
-// ==========================
-// UTILIDADES
-// ==========================
+/* =========================
+   HELPERS
+========================= */
 
-function clean(v) {
-  if (!v) return "";
-  return String(v).replace(/^_+|_+$/g, "").trim();
-}
+const wait = ms => new Promise(r => setTimeout(r, ms));
 
-function getRandomProduct() {
-  if (!productos.length) return null;
-  return productos[Math.floor(Math.random() * productos.length)];
-}
-
-// ==========================
-// EMBEDS
-// ==========================
-
-function crearEmbedProducto(p, tipo) {
-  if (!tipo) tipo = "oferta";
-
+function productEmbed(p) {
   return new EmbedBuilder()
-    .setColor(tipo === "oferta" ? 0x00ff00 : 0x0ea5e9)
-    .setTitle(clean(p[1]))
+    .setColor(0x0ea5e9)
+    .setTitle(p[1])
+    .setImage(p[0])
     .setDescription(
-      "💰 **Precio:** " + clean(p[2]) +
-      "\n\n✨ **Máxima calidad garantizada**"
+      `💰 **Price:** ${p[2] || "N/A"}\n\n` +
+      `✅ Verified product by **ChinaBuyHub**\n\n` +
+      `🔗 **Useful links:**\n` +
+      `🌐 [Website](${WEBSITE_URL})\n` +
+      `📊 [Spreadsheet](${SPREADSHEET_URL})\n` +
+      `🧩 [Chrome Extension](${EXTENSION_URL})`
     )
-    .setImage(clean(p[0]))
-    .setFooter({
-      text: tipo === "oferta"
-        ? "🔥 Oferta exclusiva"
-        : "ChinaBuyHub - Productos de calidad"
-    })
+    .setFooter({ text: "ChinaBuyHub • Community & Tools" })
     .setTimestamp();
 }
 
-function crearBotonesProducto(p) {
+function productButtons(p) {
   const row = new ActionRowBuilder();
-
-  const agentes = [
-    { label: "🛒 Comprar en USFans", url: clean(p[4]) },
-    { label: "🛒 Comprar en Kakobuy", url: clean(p[3]) },
-    { label: "🛒 Comprar en CNFans", url: clean(p[5]) }
+  const links = [
+    { label: "🛒 Buy on USFans", url: p[4] },
+    { label: "🛒 Buy on Kakobuy", url: p[3] },
+    { label: "🛒 Buy on CNFans", url: p[5] }
   ];
 
-  agentes.forEach(a => {
-    if (a.url && a.url.startsWith("http")) {
+  links.forEach(l => {
+    if (l.url && l.url.startsWith("http")) {
       row.addComponents(
         new ButtonBuilder()
-          .setLabel(a.label)
+          .setLabel(l.label)
           .setStyle(ButtonStyle.Link)
-          .setURL(a.url)
+          .setURL(l.url)
       );
     }
   });
@@ -152,139 +132,104 @@ function crearBotonesProducto(p) {
   return row.components.length ? [row] : [];
 }
 
-// ==========================
-// ENVIAR OFERTA
-// ==========================
+/* =========================
+   SEND CATALOG
+========================= */
 
-async function enviarOferta() {
-  if (!productos.length) {
-    console.log("No hay productos disponibles");
-    return;
-  }
+async function sendCatalog(amount = CATALOG_BATCH) {
+  if (!products.length) return;
 
-  if (filaActual >= productos.length) {
-    filaActual = 0;
-    await cargarProductos();
-  }
+  const channel = await client.channels.fetch(CATALOG_CHANNEL_ID);
+  if (!channel) return;
 
-  const p = productos[filaActual++];
+  let sent = 0;
 
-  try {
-    const channel = await client.channels.fetch(OFFER_CHANNEL_ID);
-    if (!channel) return;
+  for (let p of products) {
+    if (sent >= amount) break;
 
-    const mensaje = await channel.send({
-      content:
-        "🔥 **¡NUEVA OFERTA!** 🔥\n\n" +
-        "👉 **Nuevo usuario:** Regístrate y obtén hasta **800€ en bonos**\n" +
-        "🎁 https://www.usfans.com/register?ref=RCGD5Y",
-      embeds: [crearEmbedProducto(p, "oferta")],
-      components: crearBotonesProducto(p)
+    await channel.send({
+      content: "🛍️ **NEW PRODUCT ADDED TO THE CATALOG**",
+      embeds: [productEmbed(p)],
+      components: productButtons(p)
     });
 
-    await mensaje.react("🔥");
-    await mensaje.react("❤️");
-
-    stats.productosEnviados++;
-  } catch (error) {
-    console.error("Error enviando oferta:", error.message);
+    sent++;
+    stats.sent++;
+    await wait(SEND_DELAY);
   }
 }
 
-// ==========================
-// COMANDOS
-// ==========================
-
-const comandos = {
-  "!producto": async (msg) => {
-    const p = getRandomProduct();
-    if (!p) return msg.reply("❌ No hay productos disponibles");
-
-    await msg.reply({
-      embeds: [crearEmbedProducto(p, "busqueda")],
-      components: crearBotonesProducto(p)
-    });
-
-    stats.comandosUsados++;
-  },
-
-  "!stats": async (msg) => {
-    const uptime = Math.floor((Date.now() - stats.inicioBot) / 60000);
-
-    const embed = new EmbedBuilder()
-      .setColor(0x9b59b6)
-      .setTitle("📊 Estadísticas del Bot")
-      .addFields(
-        { name: "📦 Productos", value: String(productos.length), inline: true },
-        { name: "🔥 Ofertas", value: String(stats.productosEnviados), inline: true },
-        { name: "⚡ Comandos", value: String(stats.comandosUsados), inline: true },
-        { name: "⏱️ Uptime", value: uptime + " min", inline: true }
-      )
-      .setTimestamp();
-
-    await msg.reply({ embeds: [embed] });
-    stats.comandosUsados++;
-  },
-
-  "!ping": async (msg) => {
-    await msg.reply("🏓 Pong: " + client.ws.ping + "ms");
-  }
-};
-
-// ==========================
-// BOT LISTO (SIN ADVERTENCIA)
-// ==========================
-
-client.once("clientReady", async () => {
-  console.log("BOT ONLINE:", client.user.tag);
-
-  client.user.setPresence({
-    activities: [{ name: "!ayuda | ChinaBuyHub", type: ActivityType.Watching }],
-    status: "online"
-  });
-
-  await cargarProductos();
-
-  setTimeout(enviarOferta, 5000);
-  setInterval(enviarOferta, OFFER_INTERVAL);
-});
-
-// ==========================
-// BIENVENIDA
-// ==========================
-
-client.on("guildMemberAdd", async member => {
-  try {
-    const channel = await client.channels.fetch(WELCOME_CHANNEL_ID);
-    if (!channel) return;
-
-    await channel.send(`👋 Bienvenido ${member}`);
-  } catch (e) {
-    console.error("Error bienvenida:", e.message);
-  }
-});
-
-// ==========================
-// MENSAJES
-// ==========================
+/* =========================
+   COMMANDS
+========================= */
 
 client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
 
   const args = msg.content.trim().split(/\s+/);
-  const comando = args.shift().toLowerCase();
+  const cmd = args.shift().toLowerCase();
 
-  if (comandos[comando]) {
-    try {
-      await comandos[comando](msg, args);
-    } catch (e) {
-      console.error("Error comando:", e.message);
-    }
+  if (cmd === "!ping") {
+    stats.commands++;
+    return msg.reply(`🏓 Pong: ${client.ws.ping}ms`);
+  }
+
+  if (cmd === "!catalog") {
+    stats.commands++;
+    await msg.reply("📦 Sending catalog...");
+    return sendCatalog();
+  }
+
+  if (cmd === "!product") {
+    stats.commands++;
+    const p = products[Math.floor(Math.random() * products.length)];
+    if (!p) return msg.reply("No products available.");
+    return msg.reply({ embeds: [productEmbed(p)], components: productButtons(p) });
+  }
+
+  if (cmd === "!search") {
+    stats.commands++;
+    const q = args.join(" ").toLowerCase();
+    const p = products.find(x => x[1].toLowerCase().includes(q));
+    if (!p) return msg.reply("No matching product found.");
+    return msg.reply({ embeds: [productEmbed(p)], components: productButtons(p) });
+  }
+
+  if (cmd === "!website") return msg.reply(`[ChinaBuyHub Website](${WEBSITE_URL})`);
+  if (cmd === "!extension") return msg.reply(`[Chrome Extension](${EXTENSION_URL})`);
+  if (cmd === "!spreadsheet") return msg.reply(`[Spreadsheet](${SPREADSHEET_URL})`);
+
+  if (cmd === "!help") {
+    stats.commands++;
+    return msg.reply(
+      "**Available commands:**\n" +
+      "`!catalog` – Send catalog\n" +
+      "`!product` – Random product\n" +
+      "`!search <name>`\n" +
+      "`!website`\n" +
+      "`!extension`\n" +
+      "`!spreadsheet`\n" +
+      "`!ping`"
+    );
   }
 });
 
-// ==========================
-// LOGIN
-// ==========================
+/* =========================
+   READY
+========================= */
+
+client.once("clientReady", async () => {
+  console.log(`Bot online: ${client.user.tag}`);
+  client.user.setPresence({
+    activities: [{ name: "ChinaBuyHub Catalog", type: ActivityType.Watching }],
+    status: "online"
+  });
+
+  await loadProducts();
+});
+
+/* =========================
+   LOGIN
+========================= */
 
 client.login(DISCORD_TOKEN);
