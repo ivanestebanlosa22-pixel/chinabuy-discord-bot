@@ -1,4 +1,6 @@
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 const { google } = require("googleapis");
 const {
   Client,
@@ -31,6 +33,28 @@ const CATALOG_BATCH = 50;
 const SEND_DELAY = 1500;
 
 /* =========================
+   STATE (PERSISTENT)
+========================= */
+
+const STATE_FILE = path.join(__dirname, "state.json");
+
+let state = {
+  catalogIndex: 0
+};
+
+if (fs.existsSync(STATE_FILE)) {
+  try {
+    state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+  } catch {
+    console.log("State file corrupted, resetting.");
+  }
+}
+
+function saveState() {
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+/* =========================
    CLIENT
 ========================= */
 
@@ -43,7 +67,7 @@ const client = new Client({
 });
 
 /* =========================
-   STATE
+   DATA
 ========================= */
 
 let products = [];
@@ -58,11 +82,10 @@ let stats = {
 ========================= */
 
 async function getAuth() {
-  const auth = new google.auth.GoogleAuth({
+  return new google.auth.GoogleAuth({
     credentials: JSON.parse(GOOGLE_CREDENTIALS),
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
   });
-  return auth;
 }
 
 /* =========================
@@ -133,7 +156,7 @@ function productButtons(p) {
 }
 
 /* =========================
-   SEND CATALOG
+   SEND CATALOG (NO REPEATS)
 ========================= */
 
 async function sendCatalog(amount = CATALOG_BATCH) {
@@ -144,8 +167,12 @@ async function sendCatalog(amount = CATALOG_BATCH) {
 
   let sent = 0;
 
-  for (let p of products) {
-    if (sent >= amount) break;
+  while (sent < amount) {
+    if (state.catalogIndex >= products.length) {
+      state.catalogIndex = 0; // restart only after full cycle
+    }
+
+    const p = products[state.catalogIndex];
 
     await channel.send({
       content: "🛍️ **NEW PRODUCT ADDED TO THE CATALOG**",
@@ -153,8 +180,11 @@ async function sendCatalog(amount = CATALOG_BATCH) {
       components: productButtons(p)
     });
 
+    state.catalogIndex++;
     sent++;
     stats.sent++;
+
+    saveState();
     await wait(SEND_DELAY);
   }
 }
@@ -169,10 +199,7 @@ client.on("messageCreate", async msg => {
   const args = msg.content.trim().split(/\s+/);
   const cmd = args.shift().toLowerCase();
 
-  if (cmd === "!ping") {
-    stats.commands++;
-    return msg.reply(`🏓 Pong: ${client.ws.ping}ms`);
-  }
+  if (cmd === "!ping") return msg.reply(`🏓 Pong: ${client.ws.ping}ms`);
 
   if (cmd === "!catalog") {
     stats.commands++;
@@ -181,31 +208,20 @@ client.on("messageCreate", async msg => {
   }
 
   if (cmd === "!product") {
-    stats.commands++;
-    const p = products[Math.floor(Math.random() * products.length)];
+    const p = products[state.catalogIndex];
     if (!p) return msg.reply("No products available.");
     return msg.reply({ embeds: [productEmbed(p)], components: productButtons(p) });
   }
 
-  if (cmd === "!search") {
-    stats.commands++;
-    const q = args.join(" ").toLowerCase();
-    const p = products.find(x => x[1].toLowerCase().includes(q));
-    if (!p) return msg.reply("No matching product found.");
-    return msg.reply({ embeds: [productEmbed(p)], components: productButtons(p) });
-  }
-
-  if (cmd === "!website") return msg.reply(`[ChinaBuyHub Website](${WEBSITE_URL})`);
+  if (cmd === "!website") return msg.reply(`[Website](${WEBSITE_URL})`);
   if (cmd === "!extension") return msg.reply(`[Chrome Extension](${EXTENSION_URL})`);
   if (cmd === "!spreadsheet") return msg.reply(`[Spreadsheet](${SPREADSHEET_URL})`);
 
   if (cmd === "!help") {
-    stats.commands++;
     return msg.reply(
       "**Available commands:**\n" +
-      "`!catalog` – Send catalog\n" +
-      "`!product` – Random product\n" +
-      "`!search <name>`\n" +
+      "`!catalog` – Send next catalog batch\n" +
+      "`!product` – Next product\n" +
       "`!website`\n" +
       "`!extension`\n" +
       "`!spreadsheet`\n" +
