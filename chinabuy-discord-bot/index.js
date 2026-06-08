@@ -25,6 +25,7 @@ const SHEET_RANGE = process.env.SHEET_RANGE || "MAIN!A:R";
 
 const WEBSITE_URL = process.env.WEBSITE_URL || "https://www.chinabuyhub.com/";
 const SPREADSHEET_URL = process.env.SPREADSHEET_URL || "https://docs.google.com/spreadsheets/d/1YZmhCC4rBmGpv-IoIvjB8oMV6kVCgOpK4-1rDBa0Ha8";
+const SPREADSHEET_PUBLISH_ID = process.env.SPREADSHEET_PUBLISH_ID;
 const EXTENSION_URL = process.env.EXTENSION_URL || "https://chromewebstore.google.com/detail/lkbdnacknmpmcojllhlekighhchhknfd";
 
 const CATALOG_BATCH = parseInt(process.env.CATALOG_BATCH) || 5;
@@ -143,7 +144,10 @@ async function getAuth() {
    (No authentication needed if sheet is published to web)
 ========================= */
 
-const SPREADSHEET_PUBLIC_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent((process.env.SHEET_RANGE || "MAIN!A:R").split("!")[0])}`;
+const SHEET_NAME = (process.env.SHEET_RANGE || "MAIN!A:R").split("!")[0];
+const SPREADSHEET_PUBLIC_URL = SPREADSHEET_PUBLISH_ID
+  ? `https://docs.google.com/spreadsheets/d/e/${SPREADSHEET_PUBLISH_ID}/pub?output=csv`
+  : `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
 
 async function loadProductsFromCSV() {
   console.log("Loading products from published CSV...");
