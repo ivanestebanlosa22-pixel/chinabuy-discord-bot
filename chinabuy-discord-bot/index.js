@@ -28,6 +28,11 @@ const EXTENSION_URL = process.env.EXTENSION_URL || "https://chromewebstore.googl
 const CATALOG_BATCH = parseInt(process.env.CATALOG_BATCH) || 5;
 const SEND_DELAY = parseInt(process.env.SEND_DELAY) || 2000;
 
+// Auto-posting (envío automático de productos)
+const AUTO_POST_ENABLED = process.env.AUTO_POST_ENABLED !== "false"; // true por defecto
+const AUTO_POST_INTERVAL = parseInt(process.env.AUTO_POST_INTERVAL) || 3600000; // 1 hora por defecto
+const AUTO_POST_BATCH = parseInt(process.env.AUTO_POST_BATCH) || 1; // 1 producto por intervalo
+
 /* =========================
    AGENTS CONFIG
 ========================= */
@@ -385,6 +390,20 @@ client.once("clientReady", async () => {
   });
 
   await loadProducts();
+
+  // Auto-posting: envía productos automáticamente cada X tiempo
+  if (AUTO_POST_ENABLED && products.length > 0) {
+    console.log(`Auto-posting enabled: every ${AUTO_POST_INTERVAL / 1000 / 60} minutes`);
+
+    // Enviar primer producto inmediatamente
+    await sendCatalog(AUTO_POST_BATCH);
+
+    // Programar envíos automáticos
+    setInterval(async () => {
+      console.log(`Auto-posting ${AUTO_POST_BATCH} products...`);
+      await sendCatalog(AUTO_POST_BATCH);
+    }, AUTO_POST_INTERVAL);
+  }
 });
 
 /* =========================
