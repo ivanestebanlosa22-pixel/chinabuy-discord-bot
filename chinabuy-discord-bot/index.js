@@ -104,9 +104,14 @@ let products = [];
 ========================= */
 
 async function getAuth() {
-  const creds = typeof GOOGLE_CREDENTIALS === "string"
+  let creds = typeof GOOGLE_CREDENTIALS === "string"
     ? JSON.parse(GOOGLE_CREDENTIALS)
     : GOOGLE_CREDENTIALS;
+
+  // Fix escaped newlines in private key
+  if (creds.private_key && typeof creds.private_key === "string") {
+    creds.private_key = creds.private_key.replace(/\\n/g, "\n");
+  }
 
   return new google.auth.GoogleAuth({
     credentials: creds,
