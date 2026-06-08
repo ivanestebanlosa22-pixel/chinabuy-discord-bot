@@ -19,7 +19,26 @@ const {
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const CATALOG_CHANNEL_ID = process.env.CATALOG_CHANNEL_ID || "1513307154495439009";
 const CSV_FILENAME = process.env.CSV_FILENAME || "repsfinder - MAIN.csv";
-const CSV_PATH = path.join(__dirname, "..", CSV_FILENAME);
+
+// Buscar el CSV en diferentes ubicaciones
+const possiblePaths = [
+  path.join(__dirname, "..", CSV_FILENAME),
+  path.join(__dirname, CSV_FILENAME),
+  path.join(process.cwd(), CSV_FILENAME)
+];
+
+let CSV_PATH = null;
+for (const p of possiblePaths) {
+  if (fs.existsSync(p)) {
+    CSV_PATH = p;
+    break;
+  }
+}
+
+if (!CSV_PATH) {
+  console.error("CSV file not found! Searched in:", possiblePaths);
+  CSV_PATH = possiblePaths[0]; // fallback
+}
 
 const WEBSITE_URL = process.env.WEBSITE_URL || "https://www.chinabuyhub.com/";
 const SPREADSHEET_URL = process.env.SPREADSHEET_URL || "https://docs.google.com/spreadsheets/d/1YZmhCC4rBmGpv-IoIvjB8oMV6kVCgOpK4-1rDBa0Ha8";
@@ -127,6 +146,15 @@ let stats = {
 async function loadProducts() {
   return new Promise((resolve, reject) => {
     products = [];
+    console.log(`Loading CSV from: ${CSV_PATH}`);
+    console.log(`CSV exists: ${fs.existsSync(CSV_PATH)}`);
+
+    if (!fs.existsSync(CSV_PATH)) {
+      console.error("CSV file does not exist!");
+      resolve();
+      return;
+    }
+
     fs.createReadStream(CSV_PATH)
       .pipe(csv())
       .on("data", (row) => {
@@ -155,7 +183,7 @@ async function loadProducts() {
         }
       })
       .on("end", () => {
-        console.log(`Products loaded: ${products.length}`);
+        console.log(`Products loaded successfully: ${products.length}`);
         resolve();
       })
       .on("error", (err) => {
