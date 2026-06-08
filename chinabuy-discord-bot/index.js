@@ -110,32 +110,67 @@ function cleanPrivateKey(key) {
     .trim();
 }
 
-async function getAuth() {
-  let creds;
+function getCredentials() {
+  if (!GOOGLE_CREDENTIALS) throw new Error("GOOGLE_CREDENTIALS not set");
 
-  // Support base64 encoded credentials (avoids Railway newline issues)
-  if (GOOGLE_CREDENTIALS && !GOOGLE_CREDENTIALS.trimStart().startsWith("{")) {
+  if (!GOOGLE_CREDENTIALS.trimStart().startsWith("{")) {
     const buf = Buffer.from(GOOGLE_CREDENTIALS, "base64");
-    creds = JSON.parse(buf.toString("utf8"));
-  } else {
-    creds = typeof GOOGLE_CREDENTIALS === "string"
-      ? JSON.parse(GOOGLE_CREDENTIALS)
-      : GOOGLE_CREDENTIALS;
+    return JSON.parse(buf.toString("utf8"));
   }
 
-  // Fix escaped newlines and strip carriage returns in private key
-  if (creds.private_key && typeof creds.private_key === "string") {
-    creds.private_key = cleanPrivateKey(creds.private_key);
-  }
+  return typeof GOOGLE_CREDENTIALS === "string"
+    ? JSON.parse(GOOGLE_CREDENTIALS)
+    : GOOGLE_CREDENTIALS;
+}
 
-  // Use JWT directly (more control over key loading)
-  const auth = new google.auth.JWT({
+async function getAuth() {
+  const creds = getCredentials();
+
+  if (!creds.private_key) throw new Error("private_key missing in credentials");
+  if (!creds.client_email) throw new Error("client_email missing in credentials");
+
+  creds.private_key = cleanPrivateKey(creds.private_key);
+
+  return new google.auth.JWT({
     email: creds.client_email,
     key: creds.private_key,
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
   });
+}
 
-  return auth;
+/* =========================
+   FALLBACK: Fetch Google Sheet as public CSV
+   (No authentication needed if sheet is published to web)
+========================= */
+
+const SPREADSHEET_PUBLIC_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent((process.env.SHEET_RANGE || "MAIN!A:R").split("!")[0])}`;
+
+async function loadProductsFromCSV() {
+  console.log("Loading products from published CSV...");
+  const res = await fetch(SPREADSHEET_PUBLIC_URL);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  const csv = await res.text();
+  const rows = csv.split("\n").map(r => r.split(","));
+  if (rows.length < 2) throw new Error("No data rows in CSV");
+
+  products = rows.slice(1)
+    .filter(r => r[0] && r[1])
+    .map((r, idx) => ({
+      id: r[0] || String(idx + 1),
+      nombre: r[1] || "",
+      marca: r[2] || "",
+      categoria: r[3] || "",
+      precio: r[4] || "N/A",
+      ranking: r[5] || "N/A",
+      weidianId: r[7] || "",
+      linkWeidian: r[8] || "",
+      fotoPortada: r[9] || "",
+      fotos: [r[10], r[11], r[12], r[13], r[14], r[15]].filter(f => f && f.startsWith("http")),
+      descripcionEs: r[16] || "",
+      descripcionEn: r[17] || ""
+    }));
+
+  console.log(`Products loaded from CSV: ${products.length}`);
 }
 
 /* =========================
@@ -143,8 +178,9 @@ async function getAuth() {
 ========================= */
 
 async function loadProducts() {
+  // Try Google Sheets API with service account first
   try {
-    console.log("Loading products from Google Sheets...");
+    console.log("Loading products from Google Sheets API...");
     const auth = await getAuth();
     const sheets = google.sheets({ version: "v4", auth });
     const res = await sheets.spreadsheets.values.get({
@@ -155,9 +191,8 @@ async function loadProducts() {
     const rows = res.data.values || [];
     console.log(`Total rows from sheet: ${rows.length}`);
 
-    // Skip header row (index 0)
     products = rows.slice(1)
-      .filter(r => r[0] && r[1]) // Must have foto portada and nombre
+      .filter(r => r[0] && r[1])
       .map((r, idx) => ({
         id: r[0] || String(idx + 1),
         nombre: r[1] || "",
@@ -174,10 +209,20 @@ async function loadProducts() {
       }));
 
     console.log(`Products loaded: ${products.length}`);
+    return;
   } catch (e) {
-    console.error("Error loading products:", e.message);
-    if (e.stack) console.error("Stack:", e.stack.split("\n").slice(0, 6).join("\n"));
+    console.error("Google Sheets API failed:", e.message);
   }
+
+  // Fallback: try fetching published CSV
+  try {
+    await loadProductsFromCSV();
+    return;
+  } catch (e) {
+    console.error("CSV fallback also failed:", e.message);
+  }
+
+  console.error("Could not load products from any source");
 }
 
 /* =========================
