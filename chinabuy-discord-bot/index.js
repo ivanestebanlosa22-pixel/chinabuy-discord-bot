@@ -104,9 +104,16 @@ let products = [];
 ========================= */
 
 async function getAuth() {
-  let creds = typeof GOOGLE_CREDENTIALS === "string"
-    ? JSON.parse(GOOGLE_CREDENTIALS)
-    : GOOGLE_CREDENTIALS;
+  let creds;
+
+  // Support base64 encoded credentials (avoids Railway newline issues)
+  if (GOOGLE_CREDENTIALS && !GOOGLE_CREDENTIALS.trimStart().startsWith("{")) {
+    creds = JSON.parse(Buffer.from(GOOGLE_CREDENTIALS, "base64").toString("utf8"));
+  } else {
+    creds = typeof GOOGLE_CREDENTIALS === "string"
+      ? JSON.parse(GOOGLE_CREDENTIALS)
+      : GOOGLE_CREDENTIALS;
+  }
 
   // Fix escaped newlines in private key
   if (creds.private_key && typeof creds.private_key === "string") {
