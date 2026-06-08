@@ -115,9 +115,11 @@ async function getAuth() {
       : GOOGLE_CREDENTIALS;
   }
 
-  // Fix escaped newlines in private key
+  // Fix escaped newlines and strip carriage returns in private key
   if (creds.private_key && typeof creds.private_key === "string") {
-    creds.private_key = creds.private_key.replace(/\\n/g, "\n");
+    creds.private_key = creds.private_key
+      .replace(/\r/g, "")
+      .replace(/\\n/g, "\n");
   }
 
   return new google.auth.GoogleAuth({
