@@ -103,12 +103,20 @@ let products = [];
    GOOGLE AUTH
 ========================= */
 
+function cleanPrivateKey(key) {
+  return key
+    .replace(/\r/g, "")
+    .replace(/\\n/g, "\n")
+    .trim();
+}
+
 async function getAuth() {
   let creds;
 
   // Support base64 encoded credentials (avoids Railway newline issues)
   if (GOOGLE_CREDENTIALS && !GOOGLE_CREDENTIALS.trimStart().startsWith("{")) {
-    creds = JSON.parse(Buffer.from(GOOGLE_CREDENTIALS, "base64").toString("utf8"));
+    const buf = Buffer.from(GOOGLE_CREDENTIALS, "base64");
+    creds = JSON.parse(buf.toString("utf8"));
   } else {
     creds = typeof GOOGLE_CREDENTIALS === "string"
       ? JSON.parse(GOOGLE_CREDENTIALS)
@@ -117,15 +125,17 @@ async function getAuth() {
 
   // Fix escaped newlines and strip carriage returns in private key
   if (creds.private_key && typeof creds.private_key === "string") {
-    creds.private_key = creds.private_key
-      .replace(/\r/g, "")
-      .replace(/\\n/g, "\n");
+    creds.private_key = cleanPrivateKey(creds.private_key);
   }
 
-  return new google.auth.GoogleAuth({
-    credentials: creds,
+  // Use JWT directly (more control over key loading)
+  const auth = new google.auth.JWT({
+    email: creds.client_email,
+    key: creds.private_key,
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
   });
+
+  return auth;
 }
 
 /* =========================
@@ -166,6 +176,7 @@ async function loadProducts() {
     console.log(`Products loaded: ${products.length}`);
   } catch (e) {
     console.error("Error loading products:", e.message);
+    if (e.stack) console.error("Stack:", e.stack.split("\n").slice(0, 6).join("\n"));
   }
 }
 
