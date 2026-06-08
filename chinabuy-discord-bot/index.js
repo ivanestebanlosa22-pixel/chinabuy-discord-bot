@@ -30,8 +30,8 @@ const SEND_DELAY = parseInt(process.env.SEND_DELAY) || 2000;
 
 // Auto-posting (envío automático de productos)
 const AUTO_POST_ENABLED = process.env.AUTO_POST_ENABLED !== "false"; // true por defecto
-const AUTO_POST_INTERVAL = parseInt(process.env.AUTO_POST_INTERVAL) || 3600000; // 1 hora por defecto
-const AUTO_POST_BATCH = parseInt(process.env.AUTO_POST_BATCH) || 1; // 1 producto por intervalo
+const AUTO_POST_INTERVAL = parseInt(process.env.AUTO_POST_INTERVAL) || 18000000; // 5 horas por defecto
+const AUTO_POST_BATCH = parseInt(process.env.AUTO_POST_BATCH) || 25; // 25 productos por intervalo
 
 /* =========================
    AGENTS CONFIG
