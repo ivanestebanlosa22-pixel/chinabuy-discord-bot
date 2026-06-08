@@ -240,11 +240,24 @@ function photoEmbed(photoUrl, photoNumber, totalPhotos, productName) {
 ========================= */
 
 async function sendCatalog(amount = CATALOG_BATCH) {
-  if (!products.length) return;
+  console.log(`sendCatalog called with amount: ${amount}, products loaded: ${products.length}`);
+  if (!products.length) {
+    console.log("No products loaded!");
+    return;
+  }
 
-  const channel = await client.channels.fetch(CATALOG_CHANNEL_ID);
-  if (!channel) return;
+  console.log(`Fetching channel ${CATALOG_CHANNEL_ID}...`);
+  const channel = await client.channels.fetch(CATALOG_CHANNEL_ID).catch(err => {
+    console.error("Error fetching channel:", err.message);
+    return null;
+  });
 
+  if (!channel) {
+    console.log("Channel not found!");
+    return;
+  }
+
+  console.log(`Channel found: ${channel.name}`);
   let sent = 0;
 
   while (sent < amount) {
@@ -253,6 +266,7 @@ async function sendCatalog(amount = CATALOG_BATCH) {
     }
 
     const p = products[state.catalogIndex];
+    console.log(`Sending product ${sent + 1}/${amount}: ${p.nombre}`);
     const allPhotos = [p.fotoPortada, ...p.fotos].filter(f => f);
 
     // Send main embed with agent buttons
@@ -260,6 +274,8 @@ async function sendCatalog(amount = CATALOG_BATCH) {
       content: "🛍️ **NUEVO PRODUCTO / NEW PRODUCT**",
       embeds: [productEmbed(p)],
       components: [getAgentButtons(p.weidianId)]
+    }).catch(err => {
+      console.error("Error sending message:", err.message);
     });
 
     // Send additional photos as separate embeds with images
