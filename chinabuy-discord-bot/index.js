@@ -1,7 +1,7 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const csv = require("csv-parser");
+const { google } = require("googleapis");
 const {
   Client,
   GatewayIntentBits,
@@ -18,27 +18,10 @@ const {
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const CATALOG_CHANNEL_ID = process.env.CATALOG_CHANNEL_ID || "1513307154495439009";
-const CSV_FILENAME = process.env.CSV_FILENAME || "repsfinder - MAIN.csv";
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const GOOGLE_CREDENTIALS = process.env.GOOGLE_CREDENTIALS;
 
-// Buscar el CSV en diferentes ubicaciones
-const possiblePaths = [
-  path.join(__dirname, "..", CSV_FILENAME),
-  path.join(__dirname, CSV_FILENAME),
-  path.join(process.cwd(), CSV_FILENAME)
-];
-
-let CSV_PATH = null;
-for (const p of possiblePaths) {
-  if (fs.existsSync(p)) {
-    CSV_PATH = p;
-    break;
-  }
-}
-
-if (!CSV_PATH) {
-  console.error("CSV file not found! Searched in:", possiblePaths);
-  CSV_PATH = possiblePaths[0]; // fallback
-}
+const SHEET_RANGE = process.env.SHEET_RANGE || "MAIN!A:R";
 
 const WEBSITE_URL = process.env.WEBSITE_URL || "https://www.chinabuyhub.com/";
 const SPREADSHEET_URL = process.env.SPREADSHEET_URL || "https://docs.google.com/spreadsheets/d/1YZmhCC4rBmGpv-IoIvjB8oMV6kVCgOpK4-1rDBa0Ha8";
@@ -47,10 +30,10 @@ const EXTENSION_URL = process.env.EXTENSION_URL || "https://chromewebstore.googl
 const CATALOG_BATCH = parseInt(process.env.CATALOG_BATCH) || 5;
 const SEND_DELAY = parseInt(process.env.SEND_DELAY) || 2000;
 
-// Auto-posting (envío automático de productos)
-const AUTO_POST_ENABLED = process.env.AUTO_POST_ENABLED !== "false"; // true por defecto
-const AUTO_POST_INTERVAL = parseInt(process.env.AUTO_POST_INTERVAL) || 18000000; // 5 horas por defecto
-const AUTO_POST_BATCH = parseInt(process.env.AUTO_POST_BATCH) || 25; // 25 productos por intervalo
+// Auto-posting
+const AUTO_POST_ENABLED = process.env.AUTO_POST_ENABLED !== "false";
+const AUTO_POST_INTERVAL = parseInt(process.env.AUTO_POST_INTERVAL) || 18000000;
+const AUTO_POST_BATCH = parseInt(process.env.AUTO_POST_BATCH) || 25;
 
 /* =========================
    AGENTS CONFIG
@@ -59,38 +42,23 @@ const AUTO_POST_BATCH = parseInt(process.env.AUTO_POST_BATCH) || 25; // 25 produ
 const AGENTS = [
   {
     name: "USFans",
-    emoji: "🇺🇸",
-    getUrl: (id) => `https://www.usfans.com/product/3/${id}?ref=RCGD5Y`,
-    registerUrl: "https://www.usfans.com/register?ref=RCGD5Y",
-    bonus: "800¥ bono al registrarte"
+    getUrl: (id) => `https://www.usfans.com/product/3/${id}?ref=RCGD5Y`
   },
   {
     name: "Joyagoo",
-    emoji: "🇯🇵",
-    getUrl: (id) => `https://joyagoo.com/product?platform=WEIDIAN&id=${id}&ref=300768147`,
-    registerUrl: "https://joyagoo.com/register?ref=300768147",
-    bonus: "Bono de bienvenida"
+    getUrl: (id) => `https://joyagoo.com/product?platform=WEIDIAN&id=${id}&ref=300768147`
   },
   {
     name: "Litbuy",
-    emoji: "🔥",
-    getUrl: (id) => `https://litbuy.net/product/weidian/${id}?inviteCode=YBMHFG55L`,
-    registerUrl: "https://litbuy.com/register?inviteCode=YBMHFG55L",
-    bonus: "Bono de bienvenida"
+    getUrl: (id) => `https://litbuy.net/product/weidian/${id}?inviteCode=YBMHFG55L`
   },
   {
     name: "OOPBUY",
-    emoji: "⚡",
-    getUrl: (id) => `https://oopbuy.com/product/weidian/${id}?inviteCode=GH40R4J0O`,
-    registerUrl: "https://oopbuy.com/register?inviteCode=GH40R4J0O",
-    bonus: "Bono de bienvenida"
+    getUrl: (id) => `https://oopbuy.com/product/weidian/${id}?inviteCode=GH40R4J0O`
   },
   {
     name: "Mulebuy",
-    emoji: "👟",
-    getUrl: (id) => `https://mulebuy.com/product/?shop_type=weidian&id=${id}&ref=200642502`,
-    registerUrl: "https://mulebuy.com/register?ref=200642502",
-    bonus: "Bono de bienvenida"
+    getUrl: (id) => `https://mulebuy.com/product/?shop_type=weidian&id=${id}&ref=200642502`
   }
 ];
 
@@ -99,10 +67,7 @@ const AGENTS = [
 ========================= */
 
 const STATE_FILE = path.join(__dirname, "state.json");
-
-let state = {
-  catalogIndex: 0
-};
+let state = { catalogIndex: 0 };
 
 if (fs.existsSync(STATE_FILE)) {
   try {
@@ -133,64 +98,61 @@ const client = new Client({
 ========================= */
 
 let products = [];
-let stats = {
-  sent: 0,
-  commands: 0,
-  started: Date.now()
-};
 
 /* =========================
-   LOAD PRODUCTS FROM CSV
+   GOOGLE AUTH
+========================= */
+
+async function getAuth() {
+  const creds = typeof GOOGLE_CREDENTIALS === "string"
+    ? JSON.parse(GOOGLE_CREDENTIALS)
+    : GOOGLE_CREDENTIALS;
+
+  return new google.auth.GoogleAuth({
+    credentials: creds,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+  });
+}
+
+/* =========================
+   LOAD PRODUCTS FROM GOOGLE SHEETS
 ========================= */
 
 async function loadProducts() {
-  return new Promise((resolve, reject) => {
-    products = [];
-    console.log(`Loading CSV from: ${CSV_PATH}`);
-    console.log(`CSV exists: ${fs.existsSync(CSV_PATH)}`);
+  try {
+    console.log("Loading products from Google Sheets...");
+    const auth = await getAuth();
+    const sheets = google.sheets({ version: "v4", auth });
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: SHEET_RANGE
+    });
 
-    if (!fs.existsSync(CSV_PATH)) {
-      console.error("CSV file does not exist!");
-      resolve();
-      return;
-    }
+    const rows = res.data.values || [];
+    console.log(`Total rows from sheet: ${rows.length}`);
 
-    fs.createReadStream(CSV_PATH)
-      .pipe(csv())
-      .on("data", (row) => {
-        if (row["weidian_id"] && row["link weidian"] && row["foto portada"]) {
-          products.push({
-            id: row["id"],
-            nombre: row["nombre"],
-            marca: row["marca"],
-            categoria: row["Categoria"],
-            precio: row["precio"],
-            ranking: row["ranking"],
-            weidianId: row["weidian_id"],
-            linkWeidian: row["link weidian"],
-            fotoPortada: row["foto portada"],
-            fotos: [
-              row["foto 1"],
-              row["foto 2"],
-              row["foto 3"],
-              row["foto 4"],
-              row["foto 5"],
-              row["foto6"]
-            ].filter(f => f && f.startsWith("http")),
-            descripcionEs: row["descripcion"],
-            descripcionEn: row["descripcion ingles"]
-          });
-        }
-      })
-      .on("end", () => {
-        console.log(`Products loaded successfully: ${products.length}`);
-        resolve();
-      })
-      .on("error", (err) => {
-        console.error("Error loading CSV:", err.message);
-        reject(err);
-      });
-  });
+    // Skip header row (index 0)
+    products = rows.slice(1)
+      .filter(r => r[0] && r[1]) // Must have foto portada and nombre
+      .map((r, idx) => ({
+        id: r[0] || String(idx + 1),
+        nombre: r[1] || "",
+        marca: r[2] || "",
+        categoria: r[3] || "",
+        precio: r[4] || "N/A",
+        ranking: r[5] || "N/A",
+        weidianId: r[7] || "",
+        linkWeidian: r[8] || "",
+        fotoPortada: r[9] || "",
+        fotos: [r[10], r[11], r[12], r[13], r[14], r[15]].filter(f => f && f.startsWith("http")),
+        descripcionEs: r[16] || "",
+        descripcionEn: r[17] || ""
+      }));
+
+    console.log(`Products loaded: ${products.length}`);
+  } catch (e) {
+    console.error("Error loading products:", e.message);
+  }
 }
 
 /* =========================
@@ -201,7 +163,6 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 
 function getAgentButtons(weidianId) {
   const row = new ActionRowBuilder();
-
   AGENTS.forEach(agent => {
     row.addComponents(
       new ButtonBuilder()
@@ -210,28 +171,6 @@ function getAgentButtons(weidianId) {
         .setURL(agent.getUrl(weidianId))
     );
   });
-
-  return row;
-}
-
-function getLinkButtons() {
-  const row = new ActionRowBuilder();
-
-  row.addComponents(
-    new ButtonBuilder()
-      .setLabel("🌐 Website")
-      .setStyle(ButtonStyle.Link)
-      .setURL(WEBSITE_URL),
-    new ButtonBuilder()
-      .setLabel("📊 Spreadsheet")
-      .setStyle(ButtonStyle.Link)
-      .setURL(SPREADSHEET_URL),
-    new ButtonBuilder()
-      .setLabel("🧩 Extension")
-      .setStyle(ButtonStyle.Link)
-      .setURL(EXTENSION_URL)
-  );
-
   return row;
 }
 
@@ -241,17 +180,15 @@ function productEmbed(p) {
     .setTitle(p.nombre)
     .setImage(p.fotoPortada)
     .setDescription(
-      `💰 **Precio / Price:** $${p.precio || "N/A"}\n` +
-      `⭐ **Rating:** ${p.ranking || "N/A"}/10\n` +
-      `📦 **Categoría / Category:** ${p.categoria || "N/A"}\n` +
-      `🏷️ **Marca / Brand:** ${p.marca || "N/A"}\n\n` +
+      `💰 **Precio / Price:** $${p.precio}\n` +
+      `⭐ **Rating:** ${p.ranking}/10\n` +
+      `📦 **Categoría:** ${p.categoria}\n` +
+      `🏷️ **Marca:** ${p.marca}\n\n` +
       `─────────────────────\n\n` +
-      `🇪🇸 **${p.descripcionEs ? p.descripcionEs.substring(0, 400) + "..." : "Descripción no disponible"}**\n\n` +
-      `🇺🇸 **${p.descripcionEn ? p.descripcionEn.substring(0, 400) + "..." : "Description not available"}**`
+      `🇪🇸 **${p.descripcionEs ? p.descripcionEs.substring(0, 400) + "..." : ""}**\n\n` +
+      `🇺🇸 **${p.descripcionEn ? p.descripcionEn.substring(0, 400) + "..." : ""}**`
     )
-    .setFooter({
-      text: `📸 ${p.fotos.length + 1} fotos • ChinaBuyHub • Verified Products`
-    })
+    .setFooter({ text: `📸 ${p.fotos.length + 1} fotos • ChinaBuyHub • Verified Products` })
     .setTimestamp();
 }
 
@@ -268,24 +205,18 @@ function photoEmbed(photoUrl, photoNumber, totalPhotos, productName) {
 ========================= */
 
 async function sendCatalog(amount = CATALOG_BATCH) {
-  console.log(`sendCatalog called with amount: ${amount}, products loaded: ${products.length}`);
-  if (!products.length) {
-    console.log("No products loaded!");
-    return;
-  }
+  console.log(`sendCatalog called: ${amount} products, ${products.length} loaded`);
+  if (!products.length) return;
 
-  console.log(`Fetching channel ${CATALOG_CHANNEL_ID}...`);
   const channel = await client.channels.fetch(CATALOG_CHANNEL_ID).catch(err => {
     console.error("Error fetching channel:", err.message);
     return null;
   });
-
   if (!channel) {
     console.log("Channel not found!");
     return;
   }
 
-  console.log(`Channel found: ${channel.name}`);
   let sent = 0;
 
   while (sent < amount) {
@@ -295,6 +226,7 @@ async function sendCatalog(amount = CATALOG_BATCH) {
 
     const p = products[state.catalogIndex];
     console.log(`Sending product ${sent + 1}/${amount}: ${p.nombre}`);
+
     const allPhotos = [p.fotoPortada, ...p.fotos].filter(f => f);
 
     // Send main embed with agent buttons
@@ -302,32 +234,27 @@ async function sendCatalog(amount = CATALOG_BATCH) {
       content: "🛍️ **NUEVO PRODUCTO / NEW PRODUCT**",
       embeds: [productEmbed(p)],
       components: [getAgentButtons(p.weidianId)]
-    }).catch(err => {
-      console.error("Error sending message:", err.message);
-    });
+    }).catch(err => console.error("Error sending:", err.message));
 
-    // Send additional photos as separate embeds with images
+    // Send additional photos
     if (allPhotos.length > 1) {
       const additionalPhotos = allPhotos.slice(1, 6);
-
-      // Send photos in batches of 3 (Discord limit)
       for (let i = 0; i < additionalPhotos.length; i += 3) {
         const batch = additionalPhotos.slice(i, i + 3);
         const photoEmbeds = batch.map((photo, idx) =>
           photoEmbed(photo, i + idx + 2, allPhotos.length, p.nombre)
         );
-
-        await channel.send({ embeds: photoEmbeds });
+        await channel.send({ embeds: photoEmbeds }).catch(err => console.error("Error sending photos:", err.message));
       }
     }
 
     state.catalogIndex++;
     sent++;
-    stats.sent++;
-
     saveState();
     await wait(SEND_DELAY);
   }
+
+  console.log(`Finished sending ${sent} products`);
 }
 
 /* =========================
@@ -343,44 +270,29 @@ client.on("messageCreate", async msg => {
   if (cmd === "!ping") return msg.reply(`🏓 Pong: ${client.ws.ping}ms`);
 
   if (cmd === "!catalog") {
-    stats.commands++;
-    await msg.reply("📦 Enviando catálogo / Sending catalog...");
+    await msg.reply("📦 Enviando catálogo...");
     return sendCatalog();
   }
 
   if (cmd === "!product") {
     const p = products[state.catalogIndex];
-    if (!p) return msg.reply("No hay productos disponibles / No products available.");
-
-    const allPhotos = [p.fotoPortada, ...p.fotos].filter(f => f);
-    const embeds = [productEmbed(p)];
-
-    // Add additional photos as embeds
-    if (allPhotos.length > 1) {
-      const additionalPhotos = allPhotos.slice(1, 3);
-      additionalPhotos.forEach((photo, idx) => {
-        embeds.push(photoEmbed(photo, idx + 2, allPhotos.length, p.nombre));
-      });
-    }
-
+    if (!p) return msg.reply("No hay productos disponibles.");
     return msg.reply({
-      embeds: embeds,
+      embeds: [productEmbed(p)],
       components: [getAgentButtons(p.weidianId)]
     });
   }
 
-  if (cmd === "!search" || cmd === "!buscar") {
+  if (cmd === "!buscar" || cmd === "!search") {
     const query = args.join(" ").toLowerCase();
-    if (!query) return msg.reply("Usa: `!buscar [nombre del producto]` / Use: `!search [product name]`");
+    if (!query) return msg.reply("Usa: `!buscar [nombre]`");
 
     const results = products.filter(p =>
       p.nombre.toLowerCase().includes(query) ||
       p.marca.toLowerCase().includes(query)
     ).slice(0, 5);
 
-    if (results.length === 0) {
-      return msg.reply("No se encontraron productos / No products found.");
-    }
+    if (results.length === 0) return msg.reply("No se encontraron productos.");
 
     const embed = new EmbedBuilder()
       .setColor(0x0ea5e9)
@@ -389,8 +301,7 @@ client.on("messageCreate", async msg => {
         results.map((p, i) =>
           `**${i + 1}.** ${p.nombre}\n💰 $${p.precio} | ⭐ ${p.ranking}/10\n`
         ).join("\n")
-      )
-      .setFooter({ text: `${results.length} productos encontrados / products found` });
+      );
 
     return msg.reply({ embeds: [embed] });
   }
@@ -400,26 +311,18 @@ client.on("messageCreate", async msg => {
       .setColor(0x6366f1)
       .setTitle("⚙️ FindsES Bot — Help / Ayuda")
       .setDescription(
-        "🇪🇸 Aquí tienes la lista de comandos disponibles y dónde puedes utilizarlos para exprimir al máximo nuestras herramientas:\n" +
-        "🇺🇸 Here is the list of available commands and where you can use them to get the most out of our tools:\n\n" +
         "🔍 **`!buscar [producto]`**\n" +
-        "• 🇪🇸 **Uso:** En el canal #buscar-producto. Busca al instante en nuestra base de datos web.\n" +
-        "• 🇺🇸 **Usage:** In the #buscar-producto channel. Search our web database instantly.\n" +
-        "• Example: !buscar nike air force\n\n" +
+        "• Busca productos en la base de datos\n\n" +
         "📦 **`!catalog`**\n" +
-        "• 🇪🇸 Envía un lote de productos al catálogo.\n" +
-        "• 🇺🇸 Sends a batch of products to the catalog.\n\n" +
+        "• Envía 5 productos al canal de catálogo\n\n" +
         "📋 **`!help`**\n" +
-        "• 🇪🇸 Muestra este mensaje de ayuda en el chat.\n" +
-        "• 🇺🇸 Shows this help message in the chat."
+        "• Muestra este mensaje"
       );
-
     return msg.reply({ embeds: [embed] });
   }
 
   if (cmd === "!website") return msg.reply(`[Website](${WEBSITE_URL})`);
-  if (cmd === "!extension") return msg.reply(`[Chrome Extension](${EXTENSION_URL})`);
-  if (cmd === "!spreadsheet") return msg.reply(`[Spreadsheet](${SPREADSHEET_URL})`);
+  if (cmd === "!extension") return msg.reply(`[Extension](${EXTENSION_URL})`);
 });
 
 /* =========================
@@ -435,16 +338,14 @@ client.once("clientReady", async () => {
 
   await loadProducts();
 
-  // Auto-posting: envía productos automáticamente cada X tiempo
+  // Auto-posting
   if (AUTO_POST_ENABLED && products.length > 0) {
-    console.log(`Auto-posting enabled: every ${AUTO_POST_INTERVAL / 1000 / 60} minutes`);
+    console.log(`Auto-posting: ${AUTO_POST_BATCH} products every ${AUTO_POST_INTERVAL / 1000 / 60} min`);
 
-    // Enviar primer producto inmediatamente
     await sendCatalog(AUTO_POST_BATCH);
 
-    // Programar envíos automáticos
     setInterval(async () => {
-      console.log(`Auto-posting ${AUTO_POST_BATCH} products...`);
+      console.log("Auto-posting triggered...");
       await sendCatalog(AUTO_POST_BATCH);
     }, AUTO_POST_INTERVAL);
   }
