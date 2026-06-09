@@ -2,9 +2,7 @@ node_modules/
 state.json
 .env
 *.log
-
-# Only chinabuy-discord-bot belongs in this repo
 chinabuy-helper-bot/
 agentes.xlsx - Hoja 1.csv
 repsfinder - MAIN.csv
-*.env.example
+.env.example
