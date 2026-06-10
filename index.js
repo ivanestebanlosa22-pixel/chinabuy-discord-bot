@@ -17,7 +17,7 @@ const {
 ========================= */
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const CATALOG_CHANNEL_ID = process.env.CATALOG_CHANNEL_ID || "1513307154495439009";
+const CATALOG_CHANNEL_ID = process.env.CATALOG_CHANNEL_ID || "1514340027432304660";
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const GOOGLE_CREDENTIALS = process.env.GOOGLE_CREDENTIALS;
 
@@ -176,7 +176,7 @@ async function loadProductsFromCSV() {
   if (rows.length < 2) throw new Error("No data rows in CSV");
 
   products = rows.slice(1)
-    .filter(r => r[0] && r[1])
+    .filter(r => r[0] && r[1] && !r[0].startsWith("http"))
     .map((r, idx) => {
       const p = {
         id: r[0] || String(idx + 1),
@@ -226,7 +226,7 @@ async function loadProducts() {
     console.log(`Total rows from sheet: ${rows.length}`);
 
     products = rows.slice(1)
-      .filter(r => r[0] && r[1])
+    .filter(r => r[0] && r[1] && !r[0].startsWith("http"))
       .map((r, idx) => ({
         id: r[0] || String(idx + 1),
         nombre: r[1] || "",
