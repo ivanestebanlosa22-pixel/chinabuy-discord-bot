@@ -499,38 +499,12 @@ client.once("clientReady", async () => {
     return;
   }
 
-  const descLines = [];
-  descLines.push(`💰 **Precio:** $${p.precio}`);
-  if (p.marca) descLines.push(`🏷️ **Marca:** ${p.marca}`);
-  if (p.categoria) descLines.push(`📦 **Categoría:** ${p.categoria}`);
-  if (p.ranking && p.ranking !== "N/A") descLines.push(`⭐ **Rating:** ${p.ranking}/10`);
-
-  let fullDesc = "";
-  if (p.descripcionEs) fullDesc += `\n\n🇪🇸 ${p.descripcionEs}`;
-  if (p.descripcionEn) fullDesc += `\n\n🇺🇸 ${p.descripcionEn}`;
-  if (fullDesc.length > 2000) fullDesc = fullDesc.substring(0, 1997) + "...";
-
   const infoEmbed = new EmbedBuilder()
     .setColor(0xf97316)
     .setTitle(`🛍️ ${p.nombre}`)
-    .setDescription(descLines.join("\n") + fullDesc)
-    .setFooter({ text: "ChinaBuyHub • Verified Products" })
+    .setDescription(`💰 **Precio:** $${p.precio}`)
+    .setFooter({ text: "ChinaBuyHub" })
     .setTimestamp();
-
-  if (p.fotoPortada) infoEmbed.setThumbnail(p.fotoPortada);
-
-  const imageUrls = [p.fotoPortada, p.fotos[0], p.fotos[1]].filter(f => f);
-
-  let attachments = [];
-  for (let i = 0; i < imageUrls.length; i++) {
-    try {
-      const res = await fetch(imageUrls[i]);
-      const buf = Buffer.from(await res.arrayBuffer());
-      attachments.push({ attachment: buf, name: `photo_${i+1}.jpg` });
-    } catch (e) {
-      console.log("Failed to download image:", e.message);
-    }
-  }
 
   const agentsRow = new ActionRowBuilder()
     .addComponents(
@@ -548,7 +522,7 @@ client.once("clientReady", async () => {
         .setURL(`https://www.kakobuy.com/item/details?url=${encodeURIComponent(`https://weidian.com/item.html?itemID=${p.weidianId}`)}&affcode=hc9hzs`)
     );
 
-  await channel.send({ files: attachments, embeds: [infoEmbed], components: [agentsRow] });
+  await channel.send({ embeds: [infoEmbed], components: [agentsRow] });
   console.log("Test message sent");
 });
 
