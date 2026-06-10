@@ -483,9 +483,13 @@ client.once("clientReady", async () => {
     return;
   }
 
-  const channel = await client.channels.fetch(CATALOG_CHANNEL_ID);
+  console.log(`Using channel ID: ${CATALOG_CHANNEL_ID}`);
+  const channel = await client.channels.fetch(CATALOG_CHANNEL_ID).catch(err => {
+    console.error("Error fetching channel:", err.message);
+    return null;
+  });
   if (!channel) {
-    console.log("Channel not found");
+    console.log("Channel not found or no access");
     return;
   }
 
