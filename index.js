@@ -499,30 +499,35 @@ client.once("clientReady", async () => {
     return;
   }
 
+  const imageUrls = [p.fotoPortada, p.fotos[0], p.fotos[1]].filter(f => f);
+  let attachments = [];
+  for (let i = 0; i < imageUrls.length; i++) {
+    try {
+      const res = await fetch(imageUrls[i]);
+      const buf = Buffer.from(await res.arrayBuffer());
+      attachments.push({ attachment: buf, name: `photo_${i+1}.jpg` });
+    } catch (e) {
+      console.log("Failed to download image:", e.message);
+    }
+  }
+
+  const usfans = `https://www.usfans.com/product/3/${p.weidianId}?ref=RCGD5Y`;
+  const litbuy = `https://litbuy.net/product/weidian/${p.weidianId}?inviteCode=YBMHFG55L`;
+  const kakobuy = `https://www.kakobuy.com/item/details?url=${encodeURIComponent(`https://weidian.com/item.html?itemID=${p.weidianId}`)}&affcode=hc9hzs`;
+
   const infoEmbed = new EmbedBuilder()
     .setColor(0xf97316)
     .setTitle(`🛍️ ${p.nombre}`)
-    .setDescription(`💰 **Precio:** $${p.precio}`)
+    .setDescription(
+      `💰 **Precio:** $${p.precio}\n\n` +
+      `🔥 [USFans](${usfans})\n` +
+      `⚡ [Litbuy](${litbuy})\n` +
+      `🚀 [KakoBuy](${kakobuy})`
+    )
     .setFooter({ text: "ChinaBuyHub" })
     .setTimestamp();
 
-  const agentsRow = new ActionRowBuilder()
-    .addComponents(
-      new ButtonBuilder()
-        .setLabel("🔥 USFans")
-        .setStyle(ButtonStyle.Link)
-        .setURL(`https://www.usfans.com/product/3/${p.weidianId}?ref=RCGD5Y`),
-      new ButtonBuilder()
-        .setLabel("⚡ Litbuy")
-        .setStyle(ButtonStyle.Link)
-        .setURL(`https://litbuy.net/product/weidian/${p.weidianId}?inviteCode=YBMHFG55L`),
-      new ButtonBuilder()
-        .setLabel("🚀 KakoBuy")
-        .setStyle(ButtonStyle.Link)
-        .setURL(`https://www.kakobuy.com/item/details?url=${encodeURIComponent(`https://weidian.com/item.html?itemID=${p.weidianId}`)}&affcode=hc9hzs`)
-    );
-
-  await channel.send({ embeds: [infoEmbed], components: [agentsRow] });
+  await channel.send({ files: attachments, embeds: [infoEmbed] });
   console.log("Test message sent");
 });
 
