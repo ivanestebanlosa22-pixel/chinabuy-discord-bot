@@ -473,32 +473,9 @@ client.on("messageCreate", async msg => {
    READY
 ========================= */
 
-client.once("clientReady", async () => {
-  console.log(`Bot online: ${client.user.tag}`);
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/1QtZjzS2QKycTxLdJIbldisLxP9lmBNo8NlIzcXaWeZk/edit?gid=1553707851#gid=1553707851";
 
-  await loadProducts();
-
-  if (!products.length) {
-    console.log("No products loaded, skipping test message");
-    return;
-  }
-
-  console.log(`Using channel ID: ${CATALOG_CHANNEL_ID}`);
-  const channel = await client.channels.fetch(CATALOG_CHANNEL_ID).catch(err => {
-    console.error("Error fetching channel:", err.message);
-    return null;
-  });
-  if (!channel) {
-    console.log("Channel not found or no access");
-    return;
-  }
-
-  const p = products.find(p => p.fotoPortada || p.fotos.length > 0);
-  if (!p) {
-    console.log("No products with photos found");
-    return;
-  }
-
+async function sendProductMessage(channel, p) {
   const imageUrls = [p.fotoPortada, p.fotos[0], p.fotos[1]].filter(f => f);
   let attachments = [];
   for (let i = 0; i < imageUrls.length; i++) {
@@ -512,23 +489,61 @@ client.once("clientReady", async () => {
   }
 
   const usfans = `https://www.usfans.com/product/3/${p.weidianId}?ref=RCGD5Y`;
-  const litbuy = `https://litbuy.net/product/weidian/${p.weidianId}?inviteCode=YBMHFG55L`;
+  const litbuy = `https://litbuy.com/product/2/${p.weidianId}?inviteCode=YBMHFG55L`;
   const kakobuy = `https://www.kakobuy.com/item/details?url=${encodeURIComponent(`https://weidian.com/item.html?itemID=${p.weidianId}`)}&affcode=hc9hzs`;
 
-  const infoEmbed = new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(0xf97316)
     .setTitle(`🛍️ ${p.nombre}`)
     .setDescription(
       `💰 **Precio:** $${p.precio}\n\n` +
       `🔥 [USFans](${usfans})\n` +
       `⚡ [Litbuy](${litbuy})\n` +
-      `🚀 [KakoBuy](${kakobuy})`
+      `🚀 [KakoBuy](${kakobuy})\n\n` +
+      `📊 [Spreadsheet](${SHEET_URL})`
     )
     .setFooter({ text: "ChinaBuyHub" })
     .setTimestamp();
 
-  await channel.send({ files: attachments, embeds: [infoEmbed] });
-  console.log("Test message sent");
+  await channel.send({ files: attachments, embeds: [embed] });
+}
+
+client.once("clientReady", async () => {
+  console.log(`Bot online: ${client.user.tag}`);
+
+  await loadProducts();
+
+  if (!products.length) {
+    console.log("No products loaded, skipping");
+    return;
+  }
+
+  console.log(`Using channel ID: ${CATALOG_CHANNEL_ID}`);
+  const channel = await client.channels.fetch(CATALOG_CHANNEL_ID).catch(err => {
+    console.error("Error fetching channel:", err.message);
+    return null;
+  });
+  if (!channel) {
+    console.log("Channel not found or no access");
+    return;
+  }
+
+  async function sendFirstFive() {
+    const valid = products.filter(p => p.fotoPortada || p.fotos.length > 0);
+    const toSend = valid.slice(0, 5);
+    for (let i = 0; i < toSend.length; i++) {
+      try {
+        await sendProductMessage(channel, toSend[i]);
+        console.log(`Sent product ${i + 1}/${toSend.length}: ${toSend[i].nombre}`);
+        if (i < toSend.length - 1) await wait(2000);
+      } catch (e) {
+        console.error(`Error sending product ${i}:`, e.message);
+      }
+    }
+  }
+
+  await sendFirstFive();
+  setInterval(sendFirstFive, 2 * 60 * 60 * 1000);
 });
 
 /* =========================
