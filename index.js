@@ -475,22 +475,34 @@ client.on("messageCreate", async msg => {
 
 client.once("clientReady", async () => {
   console.log(`Bot online: ${client.user.tag}`);
-  client.user.setPresence({
-    activities: [{ name: "ChinaBuyHub Catalog", type: ActivityType.Watching }],
-    status: "online"
-  });
 
   await loadProducts();
 
-  // Auto-posting
-  if (AUTO_POST_ENABLED && products.length > 0) {
-    console.log(`Auto-posting: ${AUTO_POST_BATCH} products every ${AUTO_POST_INTERVAL / 1000 / 60} min`);
-
-    setInterval(async () => {
-      console.log("Auto-posting triggered...");
-      await sendCatalog(AUTO_POST_BATCH);
-    }, AUTO_POST_INTERVAL);
+  if (!products.length) {
+    console.log("No products loaded, skipping test message");
+    return;
   }
+
+  const channel = await client.channels.fetch(CATALOG_CHANNEL_ID);
+  if (!channel) {
+    console.log("Channel not found");
+    return;
+  }
+
+  const p = products[0];
+  const fotos = [p.fotoPortada, p.fotos[0], p.fotos[1]].filter(f => f);
+
+  if (fotos.length === 0) {
+    console.log("No photos for first product");
+    return;
+  }
+
+  const embeds = fotos.map(url =>
+    new EmbedBuilder().setColor(0x0ea5e9).setImage(url)
+  );
+
+  await channel.send({ embeds });
+  console.log("Test message sent with", fotos.length, "photos");
 });
 
 /* =========================
