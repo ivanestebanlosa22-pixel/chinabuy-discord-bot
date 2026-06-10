@@ -499,17 +499,6 @@ client.once("clientReady", async () => {
     return;
   }
 
-  const embeds = [];
-
-  if (p.fotoPortada) {
-    embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setImage(p.fotoPortada));
-  }
-  for (const foto of p.fotos.slice(0, 2)) {
-    if (foto) {
-      embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setImage(foto));
-    }
-  }
-
   const descLines = [];
   descLines.push(`💰 **Precio:** $${p.precio}`);
   if (p.marca) descLines.push(`🏷️ **Marca:** ${p.marca}`);
@@ -519,7 +508,7 @@ client.once("clientReady", async () => {
   let fullDesc = "";
   if (p.descripcionEs) fullDesc += `\n\n🇪🇸 ${p.descripcionEs}`;
   if (p.descripcionEn) fullDesc += `\n\n🇺🇸 ${p.descripcionEn}`;
-  if (fullDesc.length > 2048) fullDesc = fullDesc.substring(0, 2045) + "...";
+  if (fullDesc.length > 2000) fullDesc = fullDesc.substring(0, 1997) + "...";
 
   const infoEmbed = new EmbedBuilder()
     .setColor(0xf97316)
@@ -528,11 +517,20 @@ client.once("clientReady", async () => {
     .setFooter({ text: "ChinaBuyHub • Verified Products" })
     .setTimestamp();
 
-  if (p.fotoPortada) {
-    infoEmbed.setThumbnail(p.fotoPortada);
-  }
+  if (p.fotoPortada) infoEmbed.setThumbnail(p.fotoPortada);
 
-  embeds.push(infoEmbed);
+  const imageUrls = [p.fotoPortada, p.fotos[0], p.fotos[1]].filter(f => f);
+
+  let attachments = [];
+  for (let i = 0; i < imageUrls.length; i++) {
+    try {
+      const res = await fetch(imageUrls[i]);
+      const buf = Buffer.from(await res.arrayBuffer());
+      attachments.push({ attachment: buf, name: `photo_${i+1}.jpg` });
+    } catch (e) {
+      console.log("Failed to download image:", e.message);
+    }
+  }
 
   const agentsRow = new ActionRowBuilder()
     .addComponents(
@@ -550,8 +548,8 @@ client.once("clientReady", async () => {
         .setURL(`https://www.kakobuy.com/item/details?url=${encodeURIComponent(`https://weidian.com/item.html?itemID=${p.weidianId}`)}&affcode=hc9hzs`)
     );
 
-  await channel.send({ embeds, components: [agentsRow] });
-  console.log("Test message sent with", embeds.length, "embeds");
+  await channel.send({ files: attachments, embeds: [infoEmbed], components: [agentsRow] });
+  console.log("Test message sent");
 });
 
 /* =========================
