@@ -500,29 +500,37 @@ client.once("clientReady", async () => {
   }
 
   const embeds = [];
+
   if (p.fotoPortada) {
     embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setImage(p.fotoPortada));
   }
-  if (p.fotos[0]) {
-    embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setThumbnail(p.fotos[0]));
-  }
-  if (p.fotos[1]) {
-    embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setThumbnail(p.fotos[1]));
+  for (const foto of p.fotos.slice(0, 2)) {
+    if (foto) {
+      embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setImage(foto));
+    }
   }
 
-  const infoLines = [];
-  infoLines.push(`💰 **Precio:** $${p.precio}`);
-  if (p.marca) infoLines.push(`🏷️ **Marca:** ${p.marca}`);
-  if (p.categoria) infoLines.push(`📦 **Categoría:** ${p.categoria}`);
-  if (p.ranking && p.ranking !== "N/A") infoLines.push(`⭐ **Rating:** ${p.ranking}/10`);
-  if (p.descripcionEs) infoLines.push(`\n🇪🇸 ${p.descripcionEs.substring(0, 200)}`);
+  const descLines = [];
+  descLines.push(`💰 **Precio:** $${p.precio}`);
+  if (p.marca) descLines.push(`🏷️ **Marca:** ${p.marca}`);
+  if (p.categoria) descLines.push(`📦 **Categoría:** ${p.categoria}`);
+  if (p.ranking && p.ranking !== "N/A") descLines.push(`⭐ **Rating:** ${p.ranking}/10`);
+
+  let fullDesc = "";
+  if (p.descripcionEs) fullDesc += `\n\n🇪🇸 ${p.descripcionEs}`;
+  if (p.descripcionEn) fullDesc += `\n\n🇺🇸 ${p.descripcionEn}`;
+  if (fullDesc.length > 2048) fullDesc = fullDesc.substring(0, 2045) + "...";
 
   const infoEmbed = new EmbedBuilder()
     .setColor(0xf97316)
     .setTitle(`🛍️ ${p.nombre}`)
-    .setDescription(infoLines.join("\n"))
-    .setFooter({ text: "ChinaBuyHub" })
+    .setDescription(descLines.join("\n") + fullDesc)
+    .setFooter({ text: "ChinaBuyHub • Verified Products" })
     .setTimestamp();
+
+  if (p.fotoPortada) {
+    infoEmbed.setThumbnail(p.fotoPortada);
+  }
 
   embeds.push(infoEmbed);
 
