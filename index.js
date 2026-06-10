@@ -186,7 +186,7 @@ async function loadProductsFromCSV() {
       ranking: r[5] || "N/A",
       weidianId: r[7] || "",
       linkWeidian: r[8] || "",
-      fotoPortada: r[9] || "",
+      fotoPortada: r[9] || null,
       fotos: [r[10], r[11], r[12], r[13], r[14], r[15]].filter(f => f && f.startsWith("http")),
       descripcionEs: r[16] || "",
       descripcionEn: r[17] || ""
@@ -232,7 +232,7 @@ async function loadProducts() {
         ranking: r[5] || "N/A",
         weidianId: r[7] || "",
         linkWeidian: r[8] || "",
-        fotoPortada: r[9] || "",
+        fotoPortada: r[9] || null,
         fotos: [r[10], r[11], r[12], r[13], r[14], r[15]].filter(f => f && f.startsWith("http")),
         descripcionEs: r[16] || "",
         descripcionEn: r[17] || ""
@@ -267,10 +267,9 @@ function getAgentButtons(weidianId) {
 }
 
 function productEmbed(p) {
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(0x0ea5e9)
     .setTitle(p.nombre)
-    .setImage(p.fotoPortada)
     .setDescription(
       `💰 **Precio / Price:** $${p.precio}\n` +
       `⭐ **Rating:** ${p.ranking}/10\n` +
@@ -279,7 +278,13 @@ function productEmbed(p) {
       `─────────────────────\n\n` +
       `🇪🇸 **${p.descripcionEs ? p.descripcionEs.substring(0, 400) + "..." : ""}**\n\n` +
       `🇺🇸 **${p.descripcionEn ? p.descripcionEn.substring(0, 400) + "..." : ""}**`
-    )
+    );
+
+  if (p.fotoPortada) {
+    embed.setImage(p.fotoPortada);
+  }
+
+  return embed
     .setFooter({ text: `📸 ${p.fotos.length + 1} fotos • ChinaBuyHub • Verified Products` })
     .setTimestamp();
 }
