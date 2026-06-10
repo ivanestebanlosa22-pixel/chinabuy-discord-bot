@@ -176,7 +176,7 @@ async function loadProductsFromCSV() {
   if (rows.length < 2) throw new Error("No data rows in CSV");
 
   products = rows.slice(1)
-    .filter(r => r[0] && r[1] && !r[0].startsWith("http"))
+    .filter(r => r[0] && r[1])
     .map((r, idx) => {
       const p = {
         id: r[0] || String(idx + 1),
@@ -192,7 +192,7 @@ async function loadProductsFromCSV() {
         descripcionEs: r[16] || "",
         descripcionEn: r[17] || ""
       };
-      if (idx === 0) console.log("DEBUG first product:", JSON.stringify(p));
+      if (idx < 3) console.log(`DEBUG product ${idx}: id="${r[0]}" nombre="${r[1]}" col9="${(r[9]||"").substring(0,50)}"`);
       return p;
     });
 
@@ -226,7 +226,7 @@ async function loadProducts() {
     console.log(`Total rows from sheet: ${rows.length}`);
 
     products = rows.slice(1)
-    .filter(r => r[0] && r[1] && !r[0].startsWith("http"))
+      .filter(r => r[0] && r[1])
       .map((r, idx) => ({
         id: r[0] || String(idx + 1),
         nombre: r[1] || "",
@@ -493,11 +493,15 @@ client.once("clientReady", async () => {
     return;
   }
 
-  const p = products[0];
-  const fotos = [p.fotoPortada, p.fotos[0], p.fotos[1]].filter(f => f);
+  const p = products.find(p => p.fotoPortada || p.fotos.length > 0);
+  if (!p) {
+    console.log("No products with photos found");
+    return;
+  }
 
+  const fotos = [p.fotoPortada, p.fotos[0], p.fotos[1]].filter(f => f);
   if (fotos.length === 0) {
-    console.log("No photos for first product");
+    console.log("No photos for first valid product");
     return;
   }
 
