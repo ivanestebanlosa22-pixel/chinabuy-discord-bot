@@ -177,20 +177,24 @@ async function loadProductsFromCSV() {
 
   products = rows.slice(1)
     .filter(r => r[0] && r[1])
-    .map((r, idx) => ({
-      id: r[0] || String(idx + 1),
-      nombre: r[1] || "",
-      marca: r[2] || "",
-      categoria: r[3] || "",
-      precio: r[4] || "N/A",
-      ranking: r[5] || "N/A",
-      weidianId: r[7] || "",
-      linkWeidian: r[8] || "",
-      fotoPortada: (r[9] || "").trim() || null,
-      fotos: [r[10], r[11], r[12], r[13], r[14], r[15]].filter(f => f && f.trim().startsWith("http")).map(f => f.trim()),
-      descripcionEs: r[16] || "",
-      descripcionEn: r[17] || ""
-    }));
+    .map((r, idx) => {
+      const p = {
+        id: r[0] || String(idx + 1),
+        nombre: r[1] || "",
+        marca: r[2] || "",
+        categoria: r[3] || "",
+        precio: r[4] || "N/A",
+        ranking: r[5] || "N/A",
+        weidianId: r[7] || "",
+        linkWeidian: r[8] || "",
+        fotoPortada: (r[9] || "").trim() || null,
+        fotos: [r[10], r[11], r[12], r[13], r[14], r[15]].filter(f => f && f.trim().startsWith("http")).map(f => f.trim()),
+        descripcionEs: r[16] || "",
+        descripcionEn: r[17] || ""
+      };
+      if (idx === 0) console.log("DEBUG first product:", JSON.stringify(p));
+      return p;
+    });
 
   console.log(`Products loaded from CSV: ${products.length}`);
 }
@@ -384,6 +388,23 @@ client.on("messageCreate", async msg => {
     saveState();
   }
 
+  if (cmd === "!debug") {
+    const p = products[state.catalogIndex];
+    if (!p) return msg.reply("No hay productos.");
+    return msg.reply(
+      `**${p.nombre}**\n\`\`\`\n` +
+      `precio: "${p.precio}"\n` +
+      `ranking: "${p.ranking}"\n` +
+      `categoria: "${p.categoria}"\n` +
+      `marca: "${p.marca}"\n` +
+      `weidianId: "${p.weidianId}"\n` +
+      `fotoPortada: ${p.fotoPortada ? "SI" : "NO"}\n` +
+      `fotos: ${p.fotos.length}\n` +
+      `descEs: ${p.descripcionEs.length} chars\n` +
+      `descEn: ${p.descripcionEn.length} chars\n\`\`\``
+    );
+  }
+
   if (cmd === "!product" || cmd === "!prev") {
     const p = products[state.catalogIndex];
     if (!p) return msg.reply("No hay productos disponibles.");
@@ -436,6 +457,8 @@ client.on("messageCreate", async msg => {
         "• Avanza al siguiente producto\n\n" +
         "🔍 **`!buscar [producto]`**\n" +
         "• Busca productos en la base de datos\n\n" +
+        "🐛 **`!debug`**\n" +
+        "• Muestra datos crudos del producto actual\n\n" +
         "📋 **`!help`**\n" +
         "• Muestra este mensaje"
       );
