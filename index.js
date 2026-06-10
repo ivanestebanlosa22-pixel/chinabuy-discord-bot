@@ -186,8 +186,8 @@ async function loadProductsFromCSV() {
       ranking: r[5] || "N/A",
       weidianId: r[7] || "",
       linkWeidian: r[8] || "",
-      fotoPortada: r[9] || null,
-      fotos: [r[10], r[11], r[12], r[13], r[14], r[15]].filter(f => f && f.startsWith("http")),
+      fotoPortada: (r[9] || "").trim() || null,
+      fotos: [r[10], r[11], r[12], r[13], r[14], r[15]].filter(f => f && f.trim().startsWith("http")).map(f => f.trim()),
       descripcionEs: r[16] || "",
       descripcionEn: r[17] || ""
     }));
@@ -232,8 +232,8 @@ async function loadProducts() {
         ranking: r[5] || "N/A",
         weidianId: r[7] || "",
         linkWeidian: r[8] || "",
-        fotoPortada: r[9] || null,
-        fotos: [r[10], r[11], r[12], r[13], r[14], r[15]].filter(f => f && f.startsWith("http")),
+        fotoPortada: (r[9] || "").trim() || null,
+        fotos: [r[10], r[11], r[12], r[13], r[14], r[15]].filter(f => f && f.trim().startsWith("http")).map(f => f.trim()),
         descripcionEs: r[16] || "",
         descripcionEn: r[17] || ""
       }));
@@ -374,15 +374,28 @@ client.on("messageCreate", async msg => {
   if (cmd === "!ping") return msg.reply(`🏓 Pong: ${client.ws.ping}ms`);
 
   if (cmd === "!catalog") {
-    await msg.reply("📦 Enviando catálogo...");
-    return sendCatalog();
+    const num = parseInt(args[0]) || CATALOG_BATCH;
+    await msg.reply(`📦 Enviando ${num} producto(s)...`);
+    return sendCatalog(num);
   }
 
-  if (cmd === "!product") {
+  if (cmd === "!next") {
+    state.catalogIndex = (state.catalogIndex + 1) % products.length;
+    saveState();
+  }
+
+  if (cmd === "!product" || cmd === "!prev") {
     const p = products[state.catalogIndex];
     if (!p) return msg.reply("No hay productos disponibles.");
+    const allPhotos = [p.fotoPortada, ...p.fotos].filter(f => f);
+    const embeds = [productEmbed(p)];
+    if (allPhotos.length > 1) {
+      for (const photo of allPhotos.slice(1, 10)) {
+        embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setImage(photo));
+      }
+    }
     return msg.reply({
-      embeds: [productEmbed(p)],
+      embeds,
       components: [getAgentButtons(p.weidianId)]
     });
   }
