@@ -149,12 +149,30 @@ const SPREADSHEET_PUBLIC_URL = SPREADSHEET_PUBLISH_ID
   ? `https://docs.google.com/spreadsheets/d/e/${SPREADSHEET_PUBLISH_ID}/pub?output=csv`
   : `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
 
+function parseCSVRow(row) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < row.length; i++) {
+    if (row[i] === '"') {
+      inQuotes = !inQuotes;
+    } else if (row[i] === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += row[i];
+    }
+  }
+  result.push(current);
+  return result;
+}
+
 async function loadProductsFromCSV() {
   console.log("Loading products from published CSV...");
   const res = await fetch(SPREADSHEET_PUBLIC_URL);
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   const csv = await res.text();
-  const rows = csv.split("\n").map(r => r.split(","));
+  const rows = csv.split("\n").map(r => parseCSVRow(r));
   if (rows.length < 2) throw new Error("No data rows in CSV");
 
   products = rows.slice(1)
@@ -182,7 +200,15 @@ async function loadProductsFromCSV() {
 ========================= */
 
 async function loadProducts() {
-  // Try Google Sheets API with service account first
+  // Try published CSV first (no authentication needed)
+  try {
+    await loadProductsFromCSV();
+    return;
+  } catch (e) {
+    console.log("CSV loading skipped or failed:", e.message);
+  }
+
+  // Fallback: Google Sheets API with service account
   try {
     console.log("Loading products from Google Sheets API...");
     const auth = await getAuth();
@@ -216,14 +242,6 @@ async function loadProducts() {
     return;
   } catch (e) {
     console.error("Google Sheets API failed:", e.message);
-  }
-
-  // Fallback: try fetching published CSV
-  try {
-    await loadProductsFromCSV();
-    return;
-  } catch (e) {
-    console.error("CSV fallback also failed:", e.message);
   }
 
   console.error("Could not load products from any source");
