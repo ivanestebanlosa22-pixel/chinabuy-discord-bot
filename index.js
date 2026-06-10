@@ -267,34 +267,40 @@ function getAgentButtons(weidianId) {
 }
 
 function productEmbed(p) {
+  const descLines = [];
+
+  if (p.precio && p.precio !== "N/A") {
+    descLines.push(`💰 **Precio:** $${p.precio}`);
+  }
+  if (p.ranking && p.ranking !== "N/A") {
+    descLines.push(`⭐ **Rating:** ${p.ranking}/10`);
+  }
+  if (p.categoria) {
+    descLines.push(`📦 **Categoría:** ${p.categoria}`);
+  }
+  if (p.marca) {
+    descLines.push(`🏷️ **Marca:** ${p.marca}`);
+  }
+
+  if (p.descripcionEs) {
+    descLines.push(`\n🇪🇸 ${p.descripcionEs.substring(0, 300)}`);
+  }
+  if (p.descripcionEn) {
+    descLines.push(`🇺🇸 ${p.descripcionEn.substring(0, 300)}`);
+  }
+
   const embed = new EmbedBuilder()
     .setColor(0x0ea5e9)
     .setTitle(p.nombre)
-    .setDescription(
-      `💰 **Precio / Price:** $${p.precio}\n` +
-      `⭐ **Rating:** ${p.ranking}/10\n` +
-      `📦 **Categoría:** ${p.categoria}\n` +
-      `🏷️ **Marca:** ${p.marca}\n\n` +
-      `─────────────────────\n\n` +
-      `🇪🇸 **${p.descripcionEs ? p.descripcionEs.substring(0, 400) + "..." : ""}**\n\n` +
-      `🇺🇸 **${p.descripcionEn ? p.descripcionEn.substring(0, 400) + "..." : ""}**`
-    );
+    .setDescription(descLines.join("\n") || "Sin descripción");
 
   if (p.fotoPortada) {
     embed.setImage(p.fotoPortada);
   }
 
   return embed
-    .setFooter({ text: `📸 ${p.fotos.length + 1} fotos • ChinaBuyHub • Verified Products` })
+    .setFooter({ text: `ChinaBuyHub • Verified Products` })
     .setTimestamp();
-}
-
-function photoEmbed(photoUrl, photoNumber, totalPhotos, productName) {
-  return new EmbedBuilder()
-    .setColor(0x0ea5e9)
-    .setTitle(`📸 ${productName} - Foto ${photoNumber}/${totalPhotos}`)
-    .setImage(photoUrl)
-    .setFooter({ text: "ChinaBuyHub • Verified Products" });
 }
 
 /* =========================
@@ -326,24 +332,25 @@ async function sendCatalog(amount = CATALOG_BATCH) {
 
     const allPhotos = [p.fotoPortada, ...p.fotos].filter(f => f);
 
-    // Send main embed with agent buttons
-    await channel.send({
-      content: "🛍️ **NUEVO PRODUCTO / NEW PRODUCT**",
-      embeds: [productEmbed(p)],
-      components: [getAgentButtons(p.weidianId)]
-    }).catch(err => console.error("Error sending:", err.message));
+    const embeds = [productEmbed(p)];
+    const photoCount = allPhotos.length;
 
-    // Send additional photos
-    if (allPhotos.length > 1) {
-      const additionalPhotos = allPhotos.slice(1, 6);
-      for (let i = 0; i < additionalPhotos.length; i += 3) {
-        const batch = additionalPhotos.slice(i, i + 3);
-        const photoEmbeds = batch.map((photo, idx) =>
-          photoEmbed(photo, i + idx + 2, allPhotos.length, p.nombre)
+    if (photoCount > 1) {
+      const additionalPhotos = allPhotos.slice(1, 10);
+      for (let i = 0; i < additionalPhotos.length && embeds.length < 10; i++) {
+        const photo = additionalPhotos[i];
+        embeds.push(
+          new EmbedBuilder()
+            .setColor(0x0ea5e9)
+            .setImage(photo)
         );
-        await channel.send({ embeds: photoEmbeds }).catch(err => console.error("Error sending photos:", err.message));
       }
     }
+
+    await channel.send({
+      embeds,
+      components: [getAgentButtons(p.weidianId)]
+    }).catch(err => console.error("Error sending:", err.message));
 
     state.catalogIndex++;
     sent++;
