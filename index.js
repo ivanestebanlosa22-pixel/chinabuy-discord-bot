@@ -506,7 +506,7 @@ client.once("clientReady", async () => {
   }
 
   const embeds = fotos.map(url =>
-    new EmbedBuilder().setColor(0x0ea5e9).setImage(url)
+    new EmbedBuilder().setColor(0x0ea5e9).setThumbnail(url)
   );
 
   await channel.send({ embeds });
