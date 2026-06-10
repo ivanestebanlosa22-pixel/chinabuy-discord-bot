@@ -428,10 +428,14 @@ client.on("messageCreate", async msg => {
       .setColor(0x6366f1)
       .setTitle("⚙️ FindsES Bot — Help / Ayuda")
       .setDescription(
+        "📦 **`!catalog [num]`**\n" +
+        "• Envía productos al canal (por defecto 5)\n\n" +
+        "🖼️ **`!product`**\n" +
+        "• Muestra el producto actual con todas las fotos\n\n" +
+        "⏭️ **`!next`**\n" +
+        "• Avanza al siguiente producto\n\n" +
         "🔍 **`!buscar [producto]`**\n" +
         "• Busca productos en la base de datos\n\n" +
-        "📦 **`!catalog`**\n" +
-        "• Envía 5 productos al canal de catálogo\n\n" +
         "📋 **`!help`**\n" +
         "• Muestra este mensaje"
       );
@@ -458,8 +462,6 @@ client.once("clientReady", async () => {
   // Auto-posting
   if (AUTO_POST_ENABLED && products.length > 0) {
     console.log(`Auto-posting: ${AUTO_POST_BATCH} products every ${AUTO_POST_INTERVAL / 1000 / 60} min`);
-
-    await sendCatalog(AUTO_POST_BATCH);
 
     setInterval(async () => {
       console.log("Auto-posting triggered...");
