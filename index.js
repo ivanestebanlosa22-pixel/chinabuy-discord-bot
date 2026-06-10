@@ -499,12 +499,6 @@ client.once("clientReady", async () => {
     return;
   }
 
-  const fotos = [p.fotoPortada, p.fotos[0], p.fotos[1]].filter(f => f);
-  if (fotos.length === 0) {
-    console.log("No photos for first valid product");
-    return;
-  }
-
   const embeds = [];
   if (p.fotoPortada) {
     embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setImage(p.fotoPortada));
@@ -516,8 +510,40 @@ client.once("clientReady", async () => {
     embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setThumbnail(p.fotos[1]));
   }
 
-  await channel.send({ embeds });
-  console.log("Test message sent with", fotos.length, "photos");
+  const infoLines = [];
+  infoLines.push(`💰 **Precio:** $${p.precio}`);
+  if (p.marca) infoLines.push(`🏷️ **Marca:** ${p.marca}`);
+  if (p.categoria) infoLines.push(`📦 **Categoría:** ${p.categoria}`);
+  if (p.ranking && p.ranking !== "N/A") infoLines.push(`⭐ **Rating:** ${p.ranking}/10`);
+  if (p.descripcionEs) infoLines.push(`\n🇪🇸 ${p.descripcionEs.substring(0, 200)}`);
+
+  const infoEmbed = new EmbedBuilder()
+    .setColor(0xf97316)
+    .setTitle(`🛍️ ${p.nombre}`)
+    .setDescription(infoLines.join("\n"))
+    .setFooter({ text: "ChinaBuyHub" })
+    .setTimestamp();
+
+  embeds.push(infoEmbed);
+
+  const agentsRow = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setLabel("🔥 USFans")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://www.usfans.com/product/3/${p.weidianId}?ref=RCGD5Y`),
+      new ButtonBuilder()
+        .setLabel("⚡ Litbuy")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://litbuy.net/product/weidian/${p.weidianId}?inviteCode=YBMHFG55L`),
+      new ButtonBuilder()
+        .setLabel("🚀 KakoBuy")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://www.kakobuy.com/item/details?url=${encodeURIComponent(`https://weidian.com/item.html?itemID=${p.weidianId}`)}&affcode=hc9hzs`)
+    );
+
+  await channel.send({ embeds, components: [agentsRow] });
+  console.log("Test message sent with", embeds.length, "embeds");
 });
 
 /* =========================
