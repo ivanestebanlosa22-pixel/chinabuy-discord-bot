@@ -505,9 +505,16 @@ client.once("clientReady", async () => {
     return;
   }
 
-  const embeds = fotos.map(url =>
-    new EmbedBuilder().setColor(0x0ea5e9).setThumbnail(url)
-  );
+  const embeds = [];
+  if (p.fotoPortada) {
+    embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setImage(p.fotoPortada));
+  }
+  if (p.fotos[0]) {
+    embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setThumbnail(p.fotos[0]));
+  }
+  if (p.fotos[1]) {
+    embeds.push(new EmbedBuilder().setColor(0x0ea5e9).setThumbnail(p.fotos[1]));
+  }
 
   await channel.send({ embeds });
   console.log("Test message sent with", fotos.length, "photos");
