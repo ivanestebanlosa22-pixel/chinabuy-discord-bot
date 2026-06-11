@@ -14,6 +14,7 @@ const {
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const CATALOG_CHANNEL_ID = process.env.CATALOG_CHANNEL_ID || "1514340027432304660";
+const CHOLLOS_CHANNEL_ID = process.env.CHOLLOS_CHANNEL_ID || "1514740502308589688";
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const GOOGLE_CREDENTIALS = process.env.GOOGLE_CREDENTIALS;
 
@@ -30,6 +31,8 @@ const SEND_DELAY = parseInt(process.env.SEND_DELAY) || 2000;
 const AUTO_POST_ENABLED = process.env.AUTO_POST_ENABLED !== "false";
 const AUTO_POST_INTERVAL = parseInt(process.env.AUTO_POST_INTERVAL) || 18000000;
 const AUTO_POST_BATCH = parseInt(process.env.AUTO_POST_BATCH) || 25;
+
+const CHOLLOS_INTERVAL = 3 * 60 * 60 * 1000;
 
 const AGENTS = [
   { name: "USFans", getUrl: (id) => `https://www.usfans.com/product/3/${id}?ref=RCGD5Y` },
@@ -325,6 +328,63 @@ async function autoPost(channel) {
   }
 }
 
+function getRandomChollo() {
+  if (!products.length) return null;
+
+  const categories = [...new Set(products.map(p => p.categoria).filter(c => c))];
+  const randomCategory = categories[Math.floor(Math.random() * categories.length)];
+
+  const categoryProducts = products.filter(p => p.categoria === randomCategory && (p.fotoPortada || p.fotos.length > 0));
+  if (!categoryProducts.length) {
+    const withPhotos = products.filter(p => p.fotoPortada || p.fotos.length > 0);
+    if (!withPhotos.length) return null;
+    return withPhotos[Math.floor(Math.random() * withPhotos.length)];
+  }
+
+  return categoryProducts[Math.floor(Math.random() * categoryProducts.length)];
+}
+
+async function sendChollo(channel) {
+  const p = getRandomChollo();
+  if (!p) return;
+
+  console.log(`Chollo aleatorio: ${p.nombre} (${p.categoria})`);
+
+  const usfans = `https://www.usfans.com/product/3/${p.weidianId}?ref=RCGD5Y`;
+  const litbuy = `https://litbuy.com/product/2/${p.weidianId}?inviteCode=YBMHFG55L`;
+  const kakobuy = `https://www.kakobuy.com/item/details?url=${encodeURIComponent(`https://weidian.com/item.html?itemID=${p.weidianId}`)}&affcode=hc9hzs`;
+
+  const imageUrls = [p.fotoPortada, p.fotos[0]].filter(f => f);
+  let attachments = [];
+  for (let i = 0; i < imageUrls.length; i++) {
+    try {
+      const res = await fetch(imageUrls[i]);
+      const buf = Buffer.from(await res.arrayBuffer());
+      attachments.push({ attachment: buf, name: `photo_${i+1}.jpg` });
+    } catch (e) {
+      console.log("Failed to download image:", e.message);
+    }
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x22c55e)
+    .setTitle(`🔥 ¡CHOLLO! ${p.nombre}`)
+    .setDescription(
+      `💰 **Precio:** $${p.precio}\n` +
+      `📦 **Categoría:** ${p.categoria}\n` +
+      `🏷️ **Marca:** ${p.marca || "N/A"}\n\n` +
+      `🔥 [USFans](${usfans})\n` +
+      `⚡ [Litbuy](${litbuy})\n` +
+      `🚀 [KakoBuy](${kakobuy})`
+    )
+    .setFooter({ text: "ChinaBuyHub • Chollos" })
+    .setTimestamp();
+
+  await channel.send({ files: attachments, embeds: [embed] }).catch(err => {
+    console.error("Error sending chollo:", err.message);
+  });
+}
+
 client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
 
@@ -416,6 +476,18 @@ client.once("clientReady", async () => {
 
   await autoPost(channel);
   setInterval(() => autoPost(channel), AUTO_POST_INTERVAL);
+
+  const chollosChannel = await client.channels.fetch(CHOLLOS_CHANNEL_ID).catch(err => {
+    console.error("Error fetching chollos channel:", err.message);
+    return null;
+  });
+  if (chollosChannel) {
+    console.log(`Canal de chollos: ${CHOLLOS_CHANNEL_ID}`);
+    await sendChollo(chollosChannel);
+    setInterval(() => sendChollo(chollosChannel), CHOLLOS_INTERVAL);
+  } else {
+    console.log("Canal de chollos no encontrado");
+  }
 });
 
 client.login(DISCORD_TOKEN);
