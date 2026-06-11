@@ -366,16 +366,16 @@ async function sendCatalog(amount = CATALOG_BATCH) {
 }
 
 /* =========================
-   COMMANDS
+   COMMANDS (Solo en canal de catálogo)
 ========================= */
 
 client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
 
+  if (msg.channel.id !== CATALOG_CHANNEL_ID) return;
+
   const args = msg.content.trim().split(/\s+/);
   const cmd = args.shift().toLowerCase();
-
-  if (cmd === "!ping") return msg.reply(`🏓 Pong: ${client.ws.ping}ms`);
 
   if (cmd === "!catalog") {
     const num = parseInt(args[0]) || CATALOG_BATCH;
@@ -420,53 +420,6 @@ client.on("messageCreate", async msg => {
       components: [getAgentButtons(p.weidianId)]
     });
   }
-
-  if (cmd === "!buscar" || cmd === "!search") {
-    const query = args.join(" ").toLowerCase();
-    if (!query) return msg.reply("Usa: `!buscar [nombre]`");
-
-    const results = products.filter(p =>
-      p.nombre.toLowerCase().includes(query) ||
-      p.marca.toLowerCase().includes(query)
-    ).slice(0, 5);
-
-    if (results.length === 0) return msg.reply("No se encontraron productos.");
-
-    const embed = new EmbedBuilder()
-      .setColor(0x0ea5e9)
-      .setTitle(`🔍 Resultados para "${query}"`)
-      .setDescription(
-        results.map((p, i) =>
-          `**${i + 1}.** ${p.nombre}\n💰 $${p.precio} | ⭐ ${p.ranking}/10\n`
-        ).join("\n")
-      );
-
-    return msg.reply({ embeds: [embed] });
-  }
-
-  if (cmd === "!help") {
-    const embed = new EmbedBuilder()
-      .setColor(0x6366f1)
-      .setTitle("⚙️ FindsES Bot — Help / Ayuda")
-      .setDescription(
-        "📦 **`!catalog [num]`**\n" +
-        "• Envía productos al canal (por defecto 5)\n\n" +
-        "🖼️ **`!product`**\n" +
-        "• Muestra el producto actual con todas las fotos\n\n" +
-        "⏭️ **`!next`**\n" +
-        "• Avanza al siguiente producto\n\n" +
-        "🔍 **`!buscar [producto]`**\n" +
-        "• Busca productos en la base de datos\n\n" +
-        "🐛 **`!debug`**\n" +
-        "• Muestra datos crudos del producto actual\n\n" +
-        "📋 **`!help`**\n" +
-        "• Muestra este mensaje"
-      );
-    return msg.reply({ embeds: [embed] });
-  }
-
-  if (cmd === "!website") return msg.reply(`[Website](${WEBSITE_URL})`);
-  if (cmd === "!extension") return msg.reply(`[Extension](${EXTENSION_URL})`);
 });
 
 /* =========================
