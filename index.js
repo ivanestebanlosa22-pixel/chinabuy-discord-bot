@@ -220,7 +220,7 @@ function productEmbed(p) {
     .setTimestamp();
 }
 
-const SHEET_URL = "https://docs.google.com/spreadsheets/d/1QtZjzS2QKycTxLdJIbldisLxP9lmBNo8NlIzcXaWeZk/edit?gid=1553707851#gid=1553707851";
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/1woqEzQPAwgERfKouZveua5Yr-6O2JDN0Cv-WnUyjt7U/edit?gid=1553707851#gid=1553707851";
 
 async function sendProductMessage(channel, p) {
   const imageUrls = [p.fotoPortada, p.fotos[0], p.fotos[1]].filter(f => f);
